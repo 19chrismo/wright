@@ -68,8 +68,10 @@ class Agent:
                    "WRIGHT_SEARCH": json.dumps(self.config.data.get("search"))}
             if self.config.data.get("chromium"):
                 env["WRIGHT_CHROMIUM"] = self.config.data["chromium"]
+            from .secrets import KeyStore
             self.hub = McpHub(self.registry, get_workdir=self._workdir, env=env,
-                              on_event=lambda e: self.events.emit(e.pop("kind"), **e))
+                              on_event=lambda e: self.events.emit(e.pop("kind"), **e),
+                              key_lookup=KeyStore(self.paths.secrets).get)
             enabled = self.config.data.get("builtin_servers") or list(BUILTIN_SERVERS)
             self.hub.attach_builtins(enabled)
             self.hub.attach_config(self.config.data.get("mcp_servers", {}))

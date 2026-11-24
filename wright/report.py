@@ -33,7 +33,8 @@ def build(task: Any, calibration: dict | None = None) -> dict:
                          "touches": s.get("out_of_scope", []),
                          "blocked": s.get("out_of_scope_blocked", []),
                          "count": len(s.get("out_of_scope", []))},
-        "flags": s.get("flags", []),
+        "flags": s.get("flags", []) + [{"kind": "blocked", "tool": r["tool"], "message": r["blocked"][:200]}
+                                        for r in task.ledger if r.get("blocked")],
         "promotion": prom,
         "promotions": s.get("promotions", []),
         "calibration": calibration or {},

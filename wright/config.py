@@ -67,8 +67,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_wait_seconds": 120,
         "routes": {
             # Request model -> ordered candidates. "auto" is what the harness asks for.
-            "auto": ["gemini-2.5-pro", "gemini-2.5-flash", "ollama:qwen2.5vl:7b"],
-            "fast": ["gemini-2.5-flash", "ollama:qwen2.5vl:7b"],
+            "auto": ["gemini-2.5-pro", "gemini-2.5-flash", "ollama:qwen2.5:7b"],
+            "fast": ["gemini-2.5-flash", "ollama:qwen2.5:7b"],
         },
         # Each lane is one credential at one endpoint. Keys are referenced, never inlined.
         "lanes": [

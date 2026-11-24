@@ -46,12 +46,13 @@ class ServerHandle:
 class McpHub:
     def __init__(self, registry: ToolRegistry, get_workdir: Callable[[], str] | None = None,
                  env: dict[str, str] | None = None, on_event: Callable[[dict], None] | None = None,
-                 call_timeout: float = 600):
+                 call_timeout: float = 600, key_lookup: Callable[[str], str | None] | None = None):
         self.registry = registry
         self.get_workdir = get_workdir or os.getcwd
         self.env = env or {}
         self.on_event = on_event or (lambda e: None)
         self.call_timeout = call_timeout
+        self.key_lookup = key_lookup or (lambda ref: None)
         self.servers: dict[str, ServerHandle] = {}
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True, name="wright-mcp")
@@ -61,7 +62,19 @@ class McpHub:
     def _params(self, name: str, spec: dict) -> Any:
         from mcp import StdioServerParameters
         if "url" in spec:
-            return spec["url"]
+            if not spec.get("headers"):
+                return spec["url"]
+            # Header values may reference stored secrets ("Bearer keyref:ha_token") so that tokens
+            # never sit in config.json.
+            import httpx2
+            from mcp.client.streamable_http import streamable_http_client
+            headers = {}
+            for k, v in spec["headers"].items():
+                if "keyref:" in v:
+                    pre, ref = v.split("keyref:", 1)
+                    v = pre + (self.key_lookup(ref.strip()) or "")
+                headers[k.strip()] = v.strip()
+            return streamable_http_client(spec["url"], http_client=httpx2.AsyncClient(headers=headers, timeout=60))
         if "module" in spec:
             cmd, args = sys.executable, ["-m", spec["module"]]
         else:

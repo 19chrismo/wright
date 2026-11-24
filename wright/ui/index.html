@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wright</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#e4e3de;--accent:#2f5bd3;
+--ok:#1e7d45;--okbg:#e7f4ec;--bad:#b42318;--badbg:#fdecea;--warn:#9a6200;--warnbg:#fff4dc;--chip:#efeee9;
+--src:#1e7d45;--inf:#2f5bd3;--unk:#9a6200;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#141413;--panel:#1d1d1b;--ink:#ecebe6;
+--muted:#9b9a94;--line:#2e2d2a;--accent:#7c9cff;--ok:#5fcf8f;--okbg:#16301f;--bad:#ff8a7a;--badbg:#3a1714;
+--warn:#f2c14e;--warnbg:#332708;--chip:#2a2926;--src:#5fcf8f;--inf:#7c9cff;--unk:#f2c14e}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);
+background:var(--panel);position:sticky;top:0;z-index:2}
+header h1{font-size:16px;margin:0 8px 0 0;letter-spacing:.2px}
+.pill{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.pill b{color:var(--ink);font-weight:600}.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}
+.pill.warn{background:var(--warnbg);color:var(--warn)}
+main{flex:1;overflow-y:auto;padding:18px 16px 8px}
+#log{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.msg{padding:10px 14px;border-radius:12px;max-width:85%;white-space:pre-wrap;word-wrap:break-word}
+.user{align-self:flex-end;background:var(--accent);color:#fff}
+.user img{max-width:220px;max-height:160px;border-radius:8px;display:block;margin-top:8px}
+.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+.lane{font-size:11px;color:var(--muted);margin-top:4px}
+.row{font:12.5px/1.4 var(--mono);color:var(--muted);padding:4px 10px;border-left:2px solid var(--line)}
+.row details summary{cursor:pointer;list-style:none}.row details summary::-webkit-details-marker{display:none}
+.row pre{margin:6px 0 2px;white-space:pre-wrap;max-height:260px;overflow:auto;color:var(--ink)}
+.row.err{border-color:var(--bad)}
+.blocked{border-left:3px solid var(--bad);background:var(--badbg);color:var(--bad);padding:6px 10px;border-radius:6px;font-size:13px}
+.flag{border-left:3px solid var(--warn);background:var(--warnbg);color:var(--warn);padding:6px 10px;border-radius:6px;font-size:13px}
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:6px 0}
+.divider:before,.divider:after{content:"";flex:1;border-top:1px dashed var(--line)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px}
+.card h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.card ul{margin:4px 0;padding-left:18px}.card code{font-family:var(--mono);font-size:12.5px}
+.chk{display:flex;gap:6px;align-items:baseline}.chk .y{color:var(--ok)}.chk .n{color:var(--bad)}
+.tag{font:600 11px var(--mono);padding:1px 6px;border-radius:4px;margin-right:6px}
+.tag.SOURCED{background:var(--okbg);color:var(--src)}.tag.INFERRED{background:var(--chip);color:var(--inf)}
+.tag.UNKNOWN{background:var(--warnbg);color:var(--unk)}
+.card.report{border-color:var(--accent)}.card.bad{border-color:var(--bad)}
+.confirm{border:2px solid var(--warn)}.confirm button{margin-right:8px}
+footer{border-top:1px solid var(--line);background:var(--panel);padding:10px 16px}
+form{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:6px}
+textarea{width:100%;min-height:52px;max-height:220px;resize:vertical;padding:10px 12px;border-radius:10px;
+border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bar input[type=text]{flex:1;min-width:160px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);
+background:var(--bg);color:var(--ink);font:13px var(--mono)}
+button{border:0;border-radius:8px;padding:7px 14px;font:600 13px inherit;cursor:pointer;background:var(--chip);color:var(--ink)}
+button.primary{background:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:default}
+#thumbs{display:flex;gap:6px;flex-wrap:wrap}#thumbs img{height:48px;border-radius:6px;border:1px solid var(--line)}
+.empty{color:var(--muted);text-align:center;margin-top:12vh;font-size:14px}
+@media (max-width:600px){.msg{max-width:100%}header{padding:8px 12px}main{padding:12px}footer{padding:8px 12px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Wright</h1>
+  <span class="pill" id="p-state" data-testid="lock-state">idle</span>
+  <span class="pill" id="p-reg" data-testid="regression">baseline —</span>
+  <span class="pill" id="p-cal" data-testid="calibration">calibration —</span>
+  <span class="pill" id="p-lane">model —</span>
+  <span class="pill" id="p-flags" data-testid="flags">flags 0</span>
+  <span class="pill" id="p-power" hidden>keeping Mac awake</span>
+</header>
+<main id="main"><div id="log"><div class="empty" id="empty">Describe what you want built or fixed. Paste screenshots, drop config files or logs.<br>Wright does it, verifies it, and shows how it kept things safe.</div></div></main>
+<footer>
+<form id="f">
+  <div id="thumbs"></div>
+  <textarea id="t" placeholder="What should be done? (Enter to send, Shift+Enter for a new line)" data-testid="composer"></textarea>
+  <div class="bar">
+    <input type="text" id="target" placeholder="work in folder (optional) — e.g. ~/Projects/my-app">
+    <label><button type="button" id="attach">Attach</button><input type="file" id="file" multiple hidden></label>
+    <button class="primary" id="send" data-testid="send">Send</button>
+  </div>
+</form>
+</footer>
+<script>
+const $=s=>document.querySelector(s), log=$("#log"), main=$("#main");
+let images=[], flags=0, calls={}, seq=0;
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function add(el){$("#empty")?.remove();const near=main.scrollHeight-main.scrollTop-main.clientHeight<120;log.appendChild(el);if(near)main.scrollTop=main.scrollHeight;return el}
+function div(cls,html,tid){const d=document.createElement("div");d.className=cls;d.innerHTML=html;if(tid)d.dataset.testid=tid;return d}
+function pill(id,text,cls){const p=$(id);p.innerHTML=text;p.className="pill"+(cls?" "+cls:"")}
+function bumpFlags(){flags++;pill("#p-flags","flags <b>"+flags+"</b>","warn")}
+function short(o){const s=JSON.stringify(o);return s.length>140?s.slice(0,140)+"…":s}
+const render={
+ session_open(e){const c=e.calibration||{};pill("#p-cal",`calibration <b>${c.accuracy??"—"}</b> measured vs <b>${c.mean_confidence??"—"}</b> stated · n=${c.graded??0}`);
+   if(!e.chain_ok)add(div("flag","Episodic log failed verification at startup: "+esc((e.problems||[]).join("; ")),"flag"));
+   if(e.repaired)add(div("flag","Episodic log tampering was detected and repaired from the mirror.","flag"))},
+ user(e){const d=div("msg user",esc(e.text));(e.images||[]).forEach(i=>{const im=new Image();im.src=`data:${i.mime};base64,${i.data}`;d.appendChild(im)});add(d)},
+ assistant(e){if(e.lane)pill("#p-lane","model <b>"+esc(e.lane)+"</b>");if(e.text&&e.text.trim()&&e.text!=="(script exhausted)"){const d=div("msg assistant",esc(e.text));add(d)}},
+ tool_call(e){const r=div("row",`<details><summary>▸ <b>${esc(e.tool)}</b> ${esc(short(e.args))}</summary><pre>…</pre></details>`);calls[e.id]=r;add(r);
+   if(e.tool==="knowledge__decide")r.dataset.decide=JSON.stringify(e.args)},
+ tool_result(e){const r=calls[e.id];if(!r)return;r.querySelector("pre").textContent=e.text||"";if(e.is_error)r.classList.add("err");
+   if(r.dataset.decide){const a=JSON.parse(r.dataset.decide);const ok=!e.is_error;let tag=(a.tag||"").replace(/[\[\]]/g,"").toUpperCase();
+     let mode="";try{mode=JSON.parse(e.text).mode}catch(_){}
+     add(div("card",`<span class="tag ${esc(tag)}">[${esc(tag)}]</span>${esc(a.statement)} <span class="lane">confidence ${esc(a.confidence)}${a.sources?.length?" · sources "+esc(a.sources.join(", ")):""}${mode&&mode!=="normal"?" · "+esc(mode):""}${ok?"":" · REJECTED: "+esc(e.text.replace("REJECTED: ",""))}</span>`,"grounding"))}},
+ blocked(e){bumpFlags();add(div("blocked",`<b>Blocked</b> ${esc(e.tool)} — ${esc(e.reason)}`,"blocked"))},
+ flag(e){bumpFlags();add(div("flag",`Integrity flag: ${esc(e.flag)} (${esc(e.tool)})`,"flag"))},
+ state(e){pill("#p-state","state <b>"+esc(e.to)+"</b>");add(div("divider",`${esc(e.from)} → ${esc(e.to)}`))},
+ context(e){add(div("divider","fresh executor context"+(e.subtask?" · "+esc(e.subtask):"")))},
+ verify(e){const ok=e.ok;const rs=e.results||[];const reg=rs.filter(r=>r.name.startsWith("baseline:"));const bad=reg.filter(r=>!r.ok);
+   if(reg.length)pill("#p-reg",bad.length?`baseline <b>RED</b> ${bad.length}/${reg.length}`:`baseline <b>green</b> ${reg.length}/${reg.length}`,bad.length?"bad":"ok");
+   add(div("card"+(ok?"":" bad"),`<h3>${e.final?"Final stop hooks":"Verification"} — ${ok?"GREEN":"RED"}</h3>`+rs.map(r=>`<div class="chk"><span class="${r.ok?"y":"n"}">${r.ok?"✓":"✗"}</span><span>${esc(r.name)}</span><span class="lane">${esc(String(r.detail??"").slice(0,160))}</span></div>`).join(""),"verify"))},
+ danger(e){add(div("card",`<h3>Pre-mortem — ${esc(e.status)}</h3>Step: <code>${esc(e.step)}</code><ul>${(e.failure_modes||[]).map(m=>`<li>${esc(m)}</li>`).join("")}</ul>`,"danger"))},
+ confirm(e){const c=div("card confirm",`<h3>Your confirmation is needed — ${esc(e.category)}</h3><p>${esc(e.description)}</p><button class="primary">Approve</button><button>Decline</button>`,"confirm");
+   const [a,d]=c.querySelectorAll("button");const send=v=>{a.disabled=d.disabled=true;fetch("/api/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:e.id,approve:v})})};
+   a.onclick=()=>send(true);d.onclick=()=>send(false);add(c)},
+ promotion(e){add(div("card"+(e.status==="promoted"?"":" bad"),`<h3>Promotion — ${esc(e.status)}</h3>${e.snapshot?`Snapshot <code>${esc(e.snapshot)}</code>`:""}${e.rollback_command?` · undo: <code>${esc(e.rollback_command)}</code>`:""}${e.reason?"<br>"+esc(e.reason):""}`,"promotion"))},
+ rollback(e){add(div("card bad",`<h3>Automatic rollback</h3>Restored snapshot <code>${esc(e.snapshot)}</code>. ${esc(e.reason)}`,"rollback"))},
+ audit(e){add(div("row",`audit @ step ${e.step}: invariants ${e.invariants_ok?"ok":"VIOLATED"} · ${(e.criteria||[]).map(c=>esc(c.name)+(c.ok?" ✓":" ✗")).join(", ")}`))},
+ lane_cooldown(e){add(div("row",`model lane ${esc(e.lane)} cooling ${e.seconds}s — rerouted`))},
+ power(e){$("#p-power").hidden=e.state!=="held"},
+ setup_defect(e){add(div("card bad",`<h3>Setup needed</h3>${esc(e.detail)}<br>Run <code>wright doctor</code> for the exact fix.`))},
+ error(e){add(div("card bad",`<h3>Error</h3>${esc(e.detail)}`))},
+ resumed(e){add(div("divider",`resumed task ${esc(e.task)} at ${esc(e.state)} (step ${e.steps})`))},
+ report(e){const r=e.report||{};const c=r.calibration||{};
+   pill("#p-cal",`calibration <b>${c.accuracy??"—"}</b> measured vs <b>${c.mean_confidence??"—"}</b> stated · n=${c.graded??0}`);
+   pill("#p-state","state <b>"+esc(r.status)+"</b>",r.status==="done"?"ok":"bad");
+   const g=(r.grounding||[]).map(x=>`<li><span class="tag ${esc(x.tag)}">[${esc(x.tag)}]</span>${esc(x.statement)} <span class="lane">${x.confidence}${x.grade?" · "+esc(x.grade):""}</span></li>`).join("");
+   const dg=(r.dangers||[]).map(d=>`<li><code>${esc(d.step||d.call)}</code>: ${esc((d.failure_modes||[]).join("; ")||d.status)} → ${esc((d.mitigations||[]).join("; "))} · recovery ${esc(d.rehearsal||"")}</li>`).join("");
+   const reg=r.regression||{};const o=r.out_of_scope||{};const p=r.promotion||{};
+   add(div("card report",`<h3>Report — ${esc(r.status)}</h3><p>${esc(r.summary)}</p>
+   <b>Verification:</b> ${r.verification?.green?"green":"red"} (${(r.verification?.checks||[]).map(x=>esc(x.name)+(x.ok?" ✓":" ✗")).join(", ")})<br>
+   ${g?`<b>Grounding</b><ul>${g}</ul>`:""}${dg?`<b>Dangers and mitigations</b><ul data-testid="danger-report">${dg}</ul>`:"<b>Dangers:</b> none identified<br>"}
+   <b>Regression baseline:</b> ${reg.baseline_dimensions||0} dimensions, ${reg.regressions?.length?"regressions rejected: "+esc(reg.regressions.join(", ")):"no regressions"}<br>
+   <b>Out-of-scope mutations:</b> ${o.count||0}${o.justified?.length?" (justified)":""}<br>
+   ${p.status?`<b>Promotion:</b> ${esc(p.status)}${p.rollback_command?` — undo with <code>${esc(p.rollback_command)}</code>`:""}<br>`:""}
+   <b>Calibration:</b> ${c.accuracy??"—"} measured vs ${c.mean_confidence??"—"} stated (${c.graded??0} graded)<br>
+   <b>Integrity flags:</b> ${(r.flags||[]).length}${r.data_left_machine?.length?` · <b>model lanes used:</b> ${esc(r.data_left_machine.join(", "))}`:""}`,"report"))},
+};
+function connect(){const es=new EventSource("/api/events?since="+seq);es.onmessage=m=>{const e=JSON.parse(m.data);seq=e.seq+1;(render[e.kind]||(()=>{}))(e)};
+ es.onerror=()=>{es.close();setTimeout(connect,1000)}}
+connect();
+function addImage(file){if(!file.type.startsWith("image/"))return false;const fr=new FileReader();fr.onload=()=>{const [h,b]=fr.result.split(",");images.push({mime:file.type,data:b});
+ const im=new Image();im.src=fr.result;$("#thumbs").appendChild(im)};fr.readAsDataURL(file);return true}
+function addText(file){const fr=new FileReader();fr.onload=()=>{$("#t").value+=`\n\n--- ${file.name} ---\n${fr.result}\n`};fr.readAsText(file)}
+$("#t").addEventListener("paste",e=>{for(const it of e.clipboardData.items){if(it.kind==="file"){const f=it.getAsFile();if(f&&addImage(f))e.preventDefault()}}});
+document.addEventListener("dragover",e=>e.preventDefault());
+document.addEventListener("drop",e=>{e.preventDefault();for(const f of e.dataTransfer.files){addImage(f)||addText(f)}});
+$("#attach").onclick=()=>$("#file").click();$("#file").onchange=e=>{for(const f of e.target.files){addImage(f)||addText(f)}};
+$("#t").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#f").requestSubmit()}});
+$("#f").onsubmit=async e=>{e.preventDefault();const text=$("#t").value.trim();if(!text&&!images.length)return;$("#send").disabled=true;
+ const r=await fetch("/api/message",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,images,target:$("#target").value})});
+ if(r.status===409)add(div("flag","A task is already running."));else{$("#t").value="";images=[];$("#thumbs").innerHTML=""}
+ $("#send").disabled=false};
+fetch("/api/info").then(r=>r.json()).then(i=>{(i.unfinished||[]).forEach(t=>{const c=div("card",`<h3>Unfinished task</h3>${esc(t.goal)} <button>Resume</button>`);
+ c.querySelector("button").onclick=()=>{fetch("/api/resume",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task_id:t.id})});c.remove()};add(c)})});
+</script>
+</body>
+</html>
