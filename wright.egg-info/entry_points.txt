@@ -1,0 +1,2 @@
+[console_scripts]
+wright = wright.cli:main
