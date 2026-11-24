@@ -15,6 +15,7 @@ def step1(workdir: Path | None = None, verbose: bool = True) -> Task:
     """Trivial verifiable task through observe → plan → act → verify.
     The scripted model makes a typo on purpose so the verifier has something to catch."""
     workdir = Path(workdir or tempfile.mkdtemp(prefix="wright-step1-"))
+    workdir.mkdir(parents=True, exist_ok=True)
     reg = ToolRegistry()
     reg.register(local_shell_tool(str(workdir)))
     ev = EventBus()

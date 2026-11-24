@@ -78,26 +78,51 @@ def obj(props: dict[str, Any], required: list[str] | None = None) -> dict:
     return {"type": "object", "properties": props, "required": required or list(props)}
 
 
-def local_shell_tool(cwd_default: str) -> Tool:
-    """Step-1 shell tool (direct subprocess). From step 10 on the shell is served over MCP by
-    wright.servers.shell; this one stays for the offline harness self-test."""
+def local_shell_tool(cwd_default: str, deny_write: list | None = None,
+                     deny_read: list | None = None) -> Tool:
+    """Shell tool registered in-process (offline harness and tests). The MCP shell server exposes
+    the same function over MCP; both run under the same OS write protection."""
+    from .servers.shell import run_command
 
     def run(args: dict) -> ToolResult:
         cmd = args["command"]
         cwd = args.get("cwd") or cwd_default
-        timeout = min(float(args.get("timeout", 120)), 600)
-        try:
-            p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout)
-            text = json.dumps({"exit_code": p.returncode, "stdout": p.stdout[-8000:],
-                               "stderr": p.stderr[-4000:]})
-            return ToolResult(text, is_error=p.returncode != 0,
-                              data={"command": cmd, "cwd": cwd, "exit_code": p.returncode})
-        except subprocess.TimeoutExpired:
-            return ToolResult(json.dumps({"exit_code": None, "error": f"timeout {timeout}s"}),
-                              is_error=True, data={"command": cmd, "cwd": cwd, "exit_code": None})
+        if not cwd.startswith("/"):
+            cwd = str(__import__("pathlib").Path(cwd_default, cwd))
+        out = run_command(cmd, cwd, float(args.get("timeout", 120)), deny_write, deny_read)
+        return ToolResult(json.dumps(out), is_error=out.get("exit_code") != 0,
+                          data={"command": cmd, "cwd": cwd, "exit_code": out.get("exit_code")})
 
     return Tool("shell__run", "Run a shell command. Returns exit_code, stdout, stderr.",
                 obj({"command": {"type": "string"}, "cwd": {"type": "string"},
                      "timeout": {"type": "number"}}, ["command"]),
                 run, source="local:shell", destructive=True, open_world=True)
+
+
+def local_fs_tools(cwd_default: str) -> list[Tool]:
+    from pathlib import Path
+    from .servers import fs
+
+    def a(p: str) -> str:
+        return p if Path(p).is_absolute() else str(Path(cwd_default, p))
+
+    def wrap(fn, mutating: bool):
+        def run(args: dict) -> ToolResult:
+            try:
+                out = fn(args)
+                return ToolResult(out, data={"path": args.get("path")})
+            except Exception as e:
+                return ToolResult(f"{type(e).__name__}: {e}", is_error=True)
+        return run
+
+    s = {"type": "string"}
+    return [
+        Tool("fs__read", "Read a text file.", obj({"path": s}), wrap(lambda x: fs.fs_read(a(x["path"])), False),
+             source="local:fs", read_only=True),
+        Tool("fs__write", "Create or overwrite a file.", obj({"path": s, "content": s}),
+             wrap(lambda x: fs.fs_write(a(x["path"]), x["content"]), True), source="local:fs", destructive=True),
+        Tool("fs__edit", "Replace an exact string in a file.", obj({"path": s, "old": s, "new": s}),
+             wrap(lambda x: fs.fs_edit(a(x["path"]), x["old"], x["new"]), True), source="local:fs", destructive=True),
+        Tool("fs__list", "List files.", obj({"path": s}, []),
+             wrap(lambda x: fs.fs_list(a(x.get("path", "."))), False), source="local:fs", read_only=True),
+    ]
