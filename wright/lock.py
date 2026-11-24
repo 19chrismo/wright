@@ -403,6 +403,7 @@ class Lock:
             green, results = self.verifier(t)
             t.state["last_verify"] = {"green": green, "results": results, "ledger_len": len(t.ledger),
                                       "t": time.time()}
+            t.state.setdefault("verify_log", []).append({"t": time.time(), "green": green, "results": results})
             t.state["mutations_since_gate"] = 0
             streak = t.state.setdefault("red_streak", {})
             for r in results:
@@ -436,6 +437,7 @@ class Lock:
             if not summary:
                 return ToolResult("REJECTED: write the past-tense report", is_error=True)
             green, results = self.final_check(t)
+            t.state.setdefault("verify_log", []).append({"t": time.time(), "green": green, "results": results})
             self.events.emit("verify", task=t.id, ok=green, results=results, final=True)
             if not green:
                 for r in results:
