@@ -433,6 +433,8 @@ class Lock:
                 return ToolResult(f"REFUSED: {why}", is_error=True)
             rep = self.promoter(t)
             t.state["promotion"] = rep
+            t.state.setdefault("promotions", []).append(
+                {k: rep.get(k) for k in ("status", "snapshot", "reason", "rollback_command", "t")})
             self.on_checkpoint(t)
             return ToolResult(json.dumps(rep, default=str)[:6000], is_error=rep.get("status") != "promoted")
 

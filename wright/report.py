@@ -35,6 +35,7 @@ def build(task: Any, calibration: dict | None = None) -> dict:
                          "count": len(s.get("out_of_scope", []))},
         "flags": s.get("flags", []),
         "promotion": prom,
+        "promotions": s.get("promotions", []),
         "calibration": calibration or {},
         "steps": task.steps,
         "data_left_machine": lanes,
