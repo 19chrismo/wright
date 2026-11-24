@@ -62,6 +62,7 @@ def console_printer(ev: dict) -> None:
         print(f"  ✖ blocked {ev['tool']}: {ev['reason']}")
     elif k == "state":
         print(f"  ⇢ state   {ev.get('from')} → {ev['to']}")
-    elif k in ("task_start", "task_end", "flag", "lane", "audit", "promotion", "rollback", "danger"):
+    elif k in ("task_start", "task_end", "flag", "lane", "audit", "promotion", "rollback", "danger",
+               "lane_cooldown", "lane_disabled", "lane_error", "pool_wait", "setup_defect"):
         rest = {a: b for a, b in ev.items() if a not in ("t", "kind")}
         print(f"  • {k:8s}{json.dumps(rest, default=str)[:220]}")
