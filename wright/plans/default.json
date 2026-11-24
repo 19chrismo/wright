@@ -1,0 +1,54 @@
+{
+  "id": "wright.default",
+  "version": 1,
+  "description": "Intent → knowledge → baseline → execute ⇄ verify → promote → report → done",
+  "start": "intent",
+  "states": {
+    "intent": {
+      "purpose": "Write what done means and derive machine-checkable acceptance criteria and scope.",
+      "tools": ["intent__set", "plan__advance", "plan__status", "memory__episodes", "<read>"],
+      "next": ["knowledge"],
+      "exit_guard": "intent_recorded"
+    },
+    "knowledge": {
+      "purpose": "Capture authoritative sources, read versions from the system, tag every decision.",
+      "tools": ["knowledge__capture", "knowledge__version", "knowledge__decide", "knowledge__show",
+                "plan__set", "plan__advance", "plan__status", "memory__episodes", "<read>"],
+      "next": ["baseline"],
+      "exit_guard": "grounded"
+    },
+    "baseline": {
+      "purpose": "Freeze the known-good state of the target in the sandbox.",
+      "tools": ["baseline__define", "plan__set", "plan__advance", "plan__status", "<read>"],
+      "next": ["execute"],
+      "exit_guard": "baseline_frozen"
+    },
+    "execute": {
+      "purpose": "Work the plan in the sandbox, in small verified steps.",
+      "tools": ["<all>", "plan__set", "plan__step_done", "plan__advance", "plan__status", "scope__justify",
+                "danger__premortem", "verify__run", "knowledge__capture", "knowledge__decide",
+                "knowledge__version", "knowledge__show", "memory__episodes"],
+      "next": ["verify"],
+      "exit_guard": "plan_done"
+    },
+    "verify": {
+      "purpose": "Run every stop hook. Red sends you back to execute; green allows promotion.",
+      "tools": ["verify__run", "plan__advance", "plan__status", "<read>"],
+      "next": ["execute", "promote", "report"],
+      "exit_guard": {"execute": null, "promote": "hooks_green", "report": "hooks_green_nothing_to_promote"}
+    },
+    "promote": {
+      "purpose": "Snapshot the real system, apply the sandbox, probe it, roll back automatically if red.",
+      "tools": ["promote__run", "plan__advance", "plan__status"],
+      "next": ["report", "execute"],
+      "exit_guard": {"report": "promoted", "execute": "promotion_rolled_back"}
+    },
+    "report": {
+      "purpose": "Report in past tense: results, dangers and their mitigations, out-of-scope touches.",
+      "tools": ["task__complete", "plan__status", "knowledge__show"],
+      "next": ["done"],
+      "exit_guard": "completed"
+    },
+    "done": {"terminal": true, "tools": [], "next": []}
+  }
+}

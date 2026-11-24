@@ -61,6 +61,7 @@ class Harness:
                  stop_hooks: list[StopHook] | None = None, observers: list[Observer] | None = None,
                  visible_tools: Callable[[Task], set[str] | None] | None = None,
                  context_builder: Callable[[Task], list[dict] | None] | None = None,
+                 end_of_turn: Callable[[Task, Reply], tuple[bool, str | None]] | None = None,
                  max_steps: int = 200, max_subtask_steps: int = 25, fix_attempts: int = 3,
                  wall_clock: float = 3600, max_tokens: int = 2_000_000):
         self.model = model
@@ -72,6 +73,7 @@ class Harness:
         self.observers = list(observers or [])
         self.visible_tools = visible_tools or (lambda t: None)
         self.context_builder = context_builder
+        self.end_of_turn = end_of_turn
         self.max_steps = max_steps
         self.max_subtask_steps = max_subtask_steps
         self.fix_attempts = fix_attempts
@@ -94,6 +96,8 @@ class Harness:
     def _budget_exceeded(self, task: Task) -> str | None:
         if task.steps >= self.max_steps:
             return f"step budget reached ({self.max_steps} tool steps)"
+        if task.subtask_steps >= self.max_subtask_steps:
+            return f"subtask budget reached ({self.max_subtask_steps} tool steps in one subtask)"
         if time.time() - task.started > self.wall_clock:
             return f"wall-clock budget reached ({self.wall_clock:.0f}s)"
         if task.tokens > self.max_tokens:
@@ -188,6 +192,16 @@ class Harness:
                     task.messages.extend(self._tool_message(call, res))   # observe
                     if task.status != "running":
                         break
+                continue
+            if task.status != "running":
+                break
+            if self.end_of_turn is not None:              # procedural lock decides what a bare turn means
+                finished, msg = self.end_of_turn(task, reply)
+                if finished:
+                    if task.status == "running":
+                        task.status = "done"
+                    break
+                task.messages.append({"role": "user", "provenance": "harness", "content": msg})
                 continue
             # End of turn without tool calls: the model is claiming it is done. Verify.
             green, results = self.run_stop_hooks(task)
