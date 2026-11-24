@@ -103,3 +103,63 @@ def step2(verbose: bool = True) -> dict:
 
 
 DEMOS["step2"] = step2
+
+
+def step3(verbose: bool = True) -> dict:
+    """Knowledge pack: capture sources, read the version from the system, tag decisions; a fabricated
+    quote, a [SOURCED] tag with no source, and a mutation before grounding are all rejected."""
+    import tempfile
+    from .knowledge import grounding_gate, knowledge_tools
+    from .testkit import VENDOR_DOC, StaticSite
+
+    site = StaticSite({"/man/sshd_config.html": ("text/html", VENDOR_DOC)})
+    workdir = Path(tempfile.mkdtemp(prefix="wright-step3-"))
+    (workdir / "sshd_config").write_text("PasswordAuthentication yes\n")
+    holder: dict = {}
+    reg = ToolRegistry()
+    reg.register(local_shell_tool(str(workdir)))
+    for t in knowledge_tools(lambda: holder["task"]):
+        reg.register(t)
+    ev = EventBus()
+    if verbose:
+        ev.subscribe(console_printer)
+    doc = site.url + "/man/sshd_config.html"
+
+    def sid(messages: list[dict]) -> str:
+        import json as _j
+        for m in reversed(messages):
+            if m.get("role") == "tool" and "source_id" in (m.get("content") or ""):
+                return _j.loads(m["content"])["source_id"]
+        return "?"
+
+    model = ScriptedModel([
+        call("shell__run", command="sed -i.bak 's/^PasswordAuthentication yes/PasswordAuthentication no/' sshd_config"),
+        call("knowledge__capture", locator=doc, tier=1, excerpt="Password login is deprecated in 9.6"),
+        call("knowledge__decide", statement="Set PasswordAuthentication no", tag="SOURCED", confidence=0.9),
+        call("knowledge__version", component="openssh", command="echo OpenSSH_9.6p1"),
+        call("knowledge__capture", locator=doc, tier=1, version_applies="9.6", component="openssh",
+             excerpt="PasswordAuthentication: Specifies whether password authentication is allowed."),
+        lambda m: call("knowledge__decide", statement="Set PasswordAuthentication no to disable password logins",
+                       tag="SOURCED", confidence=0.9, sources=[sid(m)], supports=["password auth off"]),
+        lambda m: call("knowledge__decide", statement="sshd must be reloaded for the change to apply",
+                       tag="INFERRED", confidence=0.7, sources=[sid(m)],
+                       chain="config options are read at startup; changing the file alone changes nothing running"),
+        call("knowledge__show"),
+        call("shell__run", command="sed -i.bak 's/^PasswordAuthentication yes/PasswordAuthentication no/' sshd_config"),
+        say("Disabled password authentication in sshd_config (staged)."),
+    ])
+    task = Task(goal="Disable SSH password logins in ./sshd_config.", workdir=workdir,
+                acceptance=[{"name": "password auth off", "kind": "file_contains", "path": "sshd_config",
+                             "regex": r"(?m)^PasswordAuthentication no$"}])
+    holder["task"] = task
+    task.state.update(domain="ssh", task_type="harden")
+    Harness(model, reg, ev, system_prompt="You are Wright.", gates=[grounding_gate],
+            stop_hooks=[acceptance_hook]).run(task)
+    site.stop()
+    if verbose:
+        print(task.state["pack"].summary())
+        print(f"result: {task.status.upper()}")
+    return {"task": task, "events": ev, "pack": task.state["pack"]}
+
+
+DEMOS["step3"] = step3
