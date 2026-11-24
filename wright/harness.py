@@ -63,7 +63,8 @@ class Harness:
                  context_builder: Callable[[Task], list[dict] | None] | None = None,
                  end_of_turn: Callable[[Task, Reply], tuple[bool, str | None]] | None = None,
                  max_steps: int = 200, max_subtask_steps: int = 25, fix_attempts: int = 3,
-                 wall_clock: float = 3600, max_tokens: int = 2_000_000):
+                 wall_clock: float = 3600, max_tokens: int = 2_000_000,
+                 redact: Callable[[str], str] | None = None):
         self.model = model
         self.registry = registry
         self.events = events or EventBus()
@@ -79,6 +80,7 @@ class Harness:
         self.fix_attempts = fix_attempts
         self.wall_clock = wall_clock
         self.max_tokens = max_tokens
+        self.redact = redact or (lambda text: text)   # secrets never enter a (cloud) model request
 
     # ------------------------------------------------------------------ helpers
     def _user_message(self, task: Task) -> dict:
@@ -138,7 +140,7 @@ class Harness:
     def _tool_message(self, call: ToolCall, res: ToolResult) -> list[dict]:
         # Tool output is DATA (provenance: tool). It goes in a tool-role message, never user role.
         msgs: list[dict] = [{"role": "tool", "tool_call_id": call.id, "name": call.name,
-                             "content": res.text}]
+                             "content": self.redact(res.text)}]
         if res.images:
             parts: list[dict] = [{"type": "text",
                                   "text": f"[data from tool {call.name}: image attached]"}]

@@ -113,7 +113,8 @@ class Agent:
             visible_tools=self.lock.visible_tools, context_builder=self.lock.context_builder,
             end_of_turn=self.lock.end_of_turn, max_steps=hcfg["max_steps_per_task"],
             max_subtask_steps=hcfg["max_steps_per_subtask"], fix_attempts=hcfg["fix_attempts"],
-            wall_clock=hcfg["wall_clock_seconds"], max_tokens=hcfg["max_tokens_per_task"])
+            wall_clock=hcfg["wall_clock_seconds"], max_tokens=hcfg["max_tokens_per_task"],
+            redact=self.continuity.redactor)
         self.events.subscribe(self._track_lanes)
         self.events.emit("session_open", chain_ok=self.opened["chain_ok"], entries=self.opened["entries"],
                          repaired=self.opened["repaired"], calibration=self.opened["calibration"],

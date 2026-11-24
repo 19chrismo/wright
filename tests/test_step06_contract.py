@@ -134,3 +134,25 @@ def test_contract_schema_round_trip():
         assert False
     except ValueError:
         pass
+
+
+def test_secrets_never_enter_a_model_request(tmp_path):
+    """Trust boundary, outbound: a stored key that shows up in tool output is redacted before the
+    transcript is sent to any model lane."""
+    from agentkit import agent_config
+    from wright.agent import Agent
+    from wright.secrets import KeyStore
+    cfg = agent_config(tmp_path)
+    KeyStore(cfg.paths.secrets, use_keychain=False).set("gemini_1", "AIzaSyFAKEKEY-0123456789abcdefghijklmnop")
+    model = ScriptedModel([call("intent__set", intent="print the environment file content for debugging",
+                                criteria=[{"name": "x", "kind": "file_exists", "path": "notes.txt"}],
+                                scope={"paths": ["*"]}),
+                           call("plan__advance", to="knowledge"),
+                           call("fs__read", path="notes.txt"), say("ok")])
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj" / "notes.txt").write_text("key=AIzaSyFAKEKEY-0123456789abcdefghijklmnop custom=tok_live_123456789\n")
+    agent = Agent(cfg, model, tools="local", power_command=[])
+    agent.lock.idle_turns = 0
+    agent.run("read notes", target=tmp_path / "proj")
+    sent = json.dumps(model.seen)
+    assert "AIzaSyFAKEKEY" not in sent and "[REDACTED]" in sent
