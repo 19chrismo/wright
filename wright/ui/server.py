@@ -53,13 +53,17 @@ class Confirmations:
 
 class UIServer:
     def __init__(self, agent_holder: dict, events: Any, confirmations: Confirmations,
-                 host: str = "127.0.0.1", port: int = 7770, info: Callable[[], dict] | None = None):
+                 host: str = "127.0.0.1", port: int = 7770, info: Callable[[], dict] | None = None,
+                 control: Any = None, force_ready: bool = False):
         if not ipaddress.ip_address(host).is_loopback:
             raise ValueError("the UI only binds to a loopback address")
         self.holder = agent_holder
         self.events = events
         self.confirmations = confirmations
         self.info = info or (lambda: {})
+        self.control = control
+        self.force_ready = force_ready
+        self.pending: dict | None = None          # a goal sent before any model was set up
         self.token = secrets.token_urlsafe(24)
         self.busy = threading.Lock()
         self.worker: threading.Thread | None = None
@@ -164,6 +168,21 @@ class UIServer:
                     return self._json(200 if ok else 404, {"ok": ok})
                 if path == "/api/resume":
                     return self._json(*outer.start_task({"resume": body.get("task_id")}))
+                if outer.control is not None:
+                    if path == "/api/keys":            # the key goes straight to the Keychain; never logged
+                        r = outer.control.add_key(body.get("provider", "gemini"), body.get("key", ""),
+                                                  (body.get("owner") or "").strip(), body.get("daily_cap") or None)
+                        if r["ok"]:
+                            outer.control.show_setup()
+                            outer.resume_pending()
+                        return self._json(200, r)
+                    if path == "/api/action":
+                        r = outer.control.handle({"action": body.get("action", ""), "args": body.get("args", {})})
+                        return self._json(200, r)
+                    if path == "/api/connect":
+                        r = outer.control.connect(body.get("name", "service"), body.get("url", ""),
+                                                  (body.get("token") or "").strip() or None)
+                        return self._json(200, r)
                 return self._json(404, {"error": "not found"})
 
         self.httpd = ThreadingHTTPServer((host, port), H)
@@ -172,7 +191,31 @@ class UIServer:
         self.url = f"http://127.0.0.1:{self.port}/?t={self.token}"
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
+    def resume_pending(self) -> None:
+        if self.pending and self.control is not None and self.control.setup_status()["ready"]:
+            body, self.pending = self.pending, None
+            self.events.emit("notice", text="Setup is ready — starting your request now.")
+            self.start_task({**body, "force_task": True})
+
     def start_task(self, body: dict) -> tuple[int, dict]:
+        text0 = (body.get("text") or "").strip()
+        if self.control is not None and not body.get("resume"):
+            if not body.get("force_task") and not body.get("images"):
+                routed = __import__("wright.control", fromlist=["route"]).route(text0)
+                if routed:
+                    self.events.emit("user", text=text0, images=[], target=None)
+                    if routed["action"] == "key_card":
+                        routed.setdefault("args", {})["text"] = text0
+                    return 200, {"routed": routed["action"], **self.control.handle(routed)}
+            if not self.force_ready and not self.control.setup_status()["ready"]:
+                self.pending = {**body, "_echoed": True}
+                self.events.emit("user", text=text0, images=[{"mime": i.get("mime"), "data": i.get("data")}
+                                                            for i in body.get("images") or []], target=None)
+                self.events.emit("notice", text="Wright needs an AI model before it can start. Add a key or "
+                                                "install the free local model below — your request will start "
+                                                "by itself as soon as one is ready.")
+                self.control.show_setup()
+                return 202, {"pending": True}
         if not self.busy.acquire(blocking=False):
             return 409, {"error": "a task is already running; it will finish or stop at its budget"}
         agent = self.holder["agent"]
@@ -196,8 +239,9 @@ class UIServer:
                 if body.get("resume"):
                     agent.resume(body["resume"])
                 else:
-                    self.events.emit("user", text=text, images=[{"mime": i["mime"], "data": i["data"]} for i in images],
-                                     target=target)
+                    if not body.get("_echoed"):
+                        self.events.emit("user", text=text, images=[{"mime": i["mime"], "data": i["data"]}
+                                                                    for i in images], target=target)
                     agent.run(text, target=target, images=images)
             except Exception as e:
                 self.events.emit("error", detail=f"{type(e).__name__}: {e}")

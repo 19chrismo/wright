@@ -33,46 +33,44 @@ wright
 This opens the Wright window. Running it again, or clicking Wright.app, brings
 back the same window; it never starts a second copy.
 
-## Models
+## Everything else happens in the window
 
-Wright talks to one local endpoint, a pooling proxy on `127.0.0.1`. The proxy
-routes each request to whichever model lane is healthy.
+After install you never need Terminal or a settings screen. The window opens
+on a setup card that shows what's ready and what's missing, with one button
+for each missing piece. You can also type these in plain words; they work even
+before any AI model is set up:
 
-```sh
-wright keys add gemini       # paste a key from aistudio.google.com (stored in the macOS Keychain)
-ollama pull qwen2.5:7b       # free local model; the last-resort lane (use qwen2.5:3b on 8 GB Macs)
-wright doctor                # tests every lane, picks current model names, prints exact fixes
-wright local-only on         # keep every model call on this Mac
-```
+| Say | What happens |
+|---|---|
+| "check setup" | Shows what's ready and what's missing. |
+| "add my Gemini key" · "add Sam's Gemini key" | A key box appears, with name and optional daily share. Paste the key into it. |
+| "show keys" · "remove Sam's key" | Shows whose keys are in use and today's use against each daily share · removes one. |
+| "install the free local model" | Wright installs Ollama itself and downloads a model sized for this Mac. |
+| "keep it private" · "use the cloud again" | Local-only mode on · off. |
+| "undo that" · "undo" again | Rolls back the last change Wright made · puts it back. |
+| "connect home assistant at http://…/api/mcp" | Attaches a device or service; a box asks for its access token. |
 
-- **When a key hits its limit (429):** that lane cools down and the next lane
-  takes over.
-- **When every cloud lane is exhausted:** the local Ollama model takes over.
-- **When nothing can serve at all:** you see one setup message with the exact
-  fix. You never see a raw usage-limit error.
-- **Note on Gemini limits:** Gemini rate limits are enforced per Google Cloud
-  project. Don't create extra projects just to multiply free quota. See
-  BRIEF.md, quota note.
+- **Keys:** go straight from the key box to the macOS Keychain. They never
+  appear in the chat, the logs or anything sent to an AI model.
+- **A request sent before setup:** waits, and starts by itself once a model is
+  ready.
+- **Anything else you type:** a goal, which Wright carries out.
 
-### Sharing keys within a household
+### Models
 
-Each person creates a key on their own Google account at aistudio.google.com
-and types it in themselves:
-
-```sh
-wright keys add gemini --owner Alex --daily-cap 300   # Alex's key; at most 300 requests a day for Wright
-wright keys add gemini --owner Sam  --daily-cap 100
-wright keys list                                      # shows each key's owner and daily share
-```
-
-- **Owner label:** each key is its own lane, named after its owner.
-- **Daily share:** the pool never uses more of anyone's daily share. When
-  every share is used up, the local model takes over.
-- **Reports:** each task's report lists which person's key served it.
-- **Who decides:** whether Google treats pooled household keys as fine is
-  Google's decision, and any consequence falls on the account that owns each
-  key. Each person should agree for their own key, and can withdraw it any
-  time with `wright keys remove --ref gemini_<name>`.
+- **How requests are routed:** Wright talks to one local endpoint, a pooling
+  proxy on `127.0.0.1`. It sends each request to whichever key is healthy.
+- **When a key hits its limit:** that key rests and the next one takes over.
+- **When every online key is used up:** the free local model takes over. You
+  never see a usage-limit error.
+- **Gemini limits:** these are per Google Cloud project. Don't create extra
+  projects just to multiply free quota (see BRIEF.md, quota note).
+- **Household keys:** each person makes a key on their own Google account and
+  pastes it into the key box under their name, with a daily share if they
+  want one. Wright never uses more than a person's share, and each report says
+  whose key did the work. Whether Google accepts pooled household keys is
+  Google's call, and any consequence falls on the account that owns each key,
+  so each person agrees for their own key.
 
 ## What happens when you send a goal
 
@@ -122,6 +120,13 @@ The only prompts you ever see are these four, because they can't be undone:
 
 ### Add another MCP server
 
+In the window, type "connect <name> at <url>", for example "connect home
+assistant at http://homeassistant.local:8123/api/mcp". A box asks for its
+access token, which goes to the Keychain, and the server's tools are available
+straight away.
+
+Servers that run as a local program are added from Terminal instead:
+
 ```sh
 wright mcp add freecad -- python3 -m freecad_mcp                # stdio server
 wright keys set ha_token                                        # store a token in the Keychain
@@ -151,7 +156,10 @@ defined by:
 See `wright/targets.py` and `tests/test_step14_promotion.py` for a worked
 example, including a rolled-back lockout.
 
-## Commands
+## Terminal commands (optional)
+
+Everything above works from the window. These commands do the same things for
+scripting or remote use.
 
 | Command | What it does |
 |---|---|

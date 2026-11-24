@@ -96,6 +96,21 @@ class Pool:
         self.cooldown: dict[tuple[str, str], float] = {}   # (lane, quota group) -> until
         self.lock = threading.Lock()
 
+    # ---------------------------------------------------------------- live changes (from the window)
+    def add_lane(self, lane: Lane) -> None:
+        with self.lock:
+            self.lanes = [l for l in self.lanes if l.id != lane.id]
+            local = [l for l in self.lanes if l.local]
+            self.lanes = [l for l in self.lanes if not l.local] + [lane] + local
+            self.stats[lane.id] = LaneStats()
+
+    def remove_lane(self, lane_id: str) -> None:
+        with self.lock:
+            self.lanes = [l for l in self.lanes if l.id != lane_id]
+            self.stats.pop(lane_id, None)
+            for k in [k for k in self.cooldown if k[0] == lane_id]:
+                del self.cooldown[k]
+
     # ---------------------------------------------------------------- routing
     def group(self, model: str) -> str:
         for pat, g in self.quota_groups.items():

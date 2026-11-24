@@ -9,6 +9,7 @@ machine, for example the user's MacBook Air. `BRIEF.md` is the spec, and
 | Step | State |
 |---|---|
 | 1–16 (harness, pool, knowledge, memory, baseline, contract, lock, calibration, self-mod gate, MCP tools, sandbox, stop hooks, danger, promotion, UI, packaging) | done; each has its own test file in `tests/` |
+| Window as the single control surface (setup, keys, privacy, undo, connect) | done (`tests/test_window_control.py`) |
 | 17. Live run on the Mac with real keys | **to do on the Mac** (steps below) |
 
 The cloud session built and tested everything on Linux with a deterministic
@@ -29,18 +30,21 @@ are exercised for the first time on the Mac:
    from `~/wright-app`. The macOS-only test,
    `test_macos_sandbox_denies_writes_to_protected_paths`, runs here. Report
    any failure with its output.
-4. **Give it a model.** At least one of:
-   - Ollama: install from ollama.com, then `ollama pull qwen2.5:7b` (or
-     `qwen2.5:3b` on an 8 GB Mac).
-   - A Gemini key: `wright keys add gemini`. **The user types the key.**
-     Never put it in chat or a file.
-5. **Check the setup.** Run `wright doctor`; every line should be ✓.
-6. **Live goal.** Run:
-   `wright task "Create a folder ~/Wright Projects/hello containing index.html that shows the heading Hello from Wright, and verify the file contains that heading"`.
-   It's done when the printed report says DONE and shows green verification
-   and a promotion with an undo command.
-7. **The window.** Run `wright`. A single window opens. Send the same goal
-   with a screenshot attached.
+4. **Open the window.** Run `wright`. The window opens on a setup card.
+   Everything from here happens in that window; no more Terminal.
+5. **Give it a model, from the window.**
+   - Click **Install it for me** for the free local model. Wright installs
+     Ollama and downloads a model sized for this Mac.
+   - And/or type "add my Gemini key". **The user pastes the key into the key
+     box themselves.** Other household members do the same with "add Sam's
+     Gemini key". Never put a key in the chat text or a file.
+6. **Live goal, typed in the window.** Type: "Create a folder
+   ~/Wright Projects/hello containing index.html that shows the heading Hello
+   from Wright, and verify the file contains that heading". It's done when the
+   report card says DONE, with green verification and a promotion with an undo
+   command. Then send the same goal again with a screenshot attached.
+7. **Undo.** Type "undo that" and confirm the folder's file went back. Type
+   "undo" again to restore it.
 
 ## Rules for a session on the Mac
 

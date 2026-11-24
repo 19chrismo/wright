@@ -34,6 +34,14 @@ don't have to be, how you stay on task without breaking what already works,
 and how you build up capability over time instead of starting from nothing
 each session.
 
+**One unit.** The window is the only control surface. Setup, model keys
+(mine and my household's), the local model, privacy, undo and connecting
+devices all happen in the chat, in plain words, and they work before any AI
+model is configured. After the one-time install I never need Terminal, a
+settings screen or a second app. Steps only a person can do (creating a key
+on their own account, physical steps) come as a single card or checklist in
+the chat.
+
 **Platform.**
 - The app runs on my MacBook Air (Apple silicon, current macOS). It must also
   run on Linux, for tests and CI.
@@ -587,3 +595,6 @@ trivial, verifiable task. Show it running before moving to step 2.
 15. **The build order** gains Mac packaging (step 16) and a live run on your
     Mac (step 17), because "an app I will use daily" isn't proven until it
     runs there.
+16. **One unit.** v1 implied it; v2 states it: setup, keys, privacy, undo and
+    connections happen in the chat window, not in Terminal commands or
+    settings screens.

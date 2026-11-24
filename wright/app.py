@@ -71,14 +71,20 @@ class App:
         self.config = config or Config.load()
         self.events = EventBus()
         self.pool_server = None
+        injected = model is not None          # tests/demos pass a model; the real app builds the pool
         if model is None:
             self.pool_server, model = build_pool(self.config, self.events)
         self.confirm = Confirmations(self.events)
         self.agent = Agent(self.config, model, confirm=self.confirm, tools=tools, events=self.events,
                            power_command=power_command)
+        from .control import Control
+        self.control = Control(self.config, self.events, self.pool_server.pool if self.pool_server else None,
+                               self.agent)
         ui = self.config.data["ui"]
         self.ui = UIServer({"agent": self.agent}, self.events, self.confirm, ui.get("host", "127.0.0.1"),
-                           port if port is not None else free_port(ui.get("port", 7770)), info=self.info)
+                           port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
+                           control=self.control, force_ready=injected)
+        self.control.on_ready = self.ui.resume_pending
 
     def info(self) -> dict[str, Any]:
         from .persist import load_task
@@ -95,6 +101,8 @@ class App:
 
     def start(self, window: bool = True) -> "App":
         self.ui.start()
+        if not self.ui.force_ready:
+            self.control.show_setup()          # the window opens on what (if anything) still needs doing
         if window:
             open_window(self.ui.url, self.config.paths.home / "window-profile")
         return self

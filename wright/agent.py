@@ -333,6 +333,8 @@ class Agent:
             tgt = DirTarget(Path(target) if target else self.default_project_dir(goal, task.id))
         root = tgt.prepare(tdir)
         task.workdir = root
+        if target_spec:
+            task.state["target_spec"] = target_spec
         task.state.update(sandbox_root=str(root), task_dir=str(tdir), target=tgt.describe(),
                           real_target=str(getattr(tgt, "real", tgt.describe().get("name"))),
                           target_was_empty=not any(Path(root).iterdir()), new_context=True)

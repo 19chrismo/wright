@@ -29,8 +29,10 @@ def gemini_429(retry_seconds: int = 30, daily: bool = False) -> list[dict]:
 class MockUpstream:
     """keys: {key: {"ok_for": int|None, "then": "429"|"429-daily"|"401"|"500"}}; key None = no auth."""
 
-    def __init__(self, brain: Model, keys: dict[str | None, dict] | None = None):
+    def __init__(self, brain: Model, keys: dict[str | None, dict] | None = None,
+                 models: list[str] | None = None):
         self.brain = brain
+        self.models = models or ["models/gemini-2.5-flash", "models/gemini-2.5-pro"]
         self.keys = keys or {None: {"ok_for": None}}
         self.served: dict[str | None, int] = {}
         self.log: list[dict] = []
@@ -48,6 +50,15 @@ class MockUpstream:
                 self.send_header("Content-Length", str(len(b)))
                 self.end_headers()
                 self.wfile.write(b)
+
+            def do_GET(self) -> None:
+                auth = self.headers.get("Authorization", "")
+                key = auth[7:] if auth.startswith("Bearer ") else None
+                if not self.path.endswith("/models"):
+                    return self._send(404, {"error": {"message": "not found"}})
+                if key not in outer.keys:
+                    return self._send(401, {"error": {"message": "API key not valid"}})
+                self._send(200, {"object": "list", "data": [{"id": m, "object": "model"} for m in outer.models]})
 
             def do_POST(self) -> None:
                 n = int(self.headers.get("Content-Length", "0"))
