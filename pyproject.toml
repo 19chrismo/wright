@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wright"
+version = "0.1.0"
+description = "Local-first single-window AI agent that builds the thing, with integrity gates."
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.3,<3"]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.45"]
+test = ["pytest>=8"]
+
+[project.scripts]
+wright = "wright.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["wright*"]
+
+[tool.setuptools.package-data]
+wright = ["ui/*", "prompts/*", "plans/*", "schemas/*", "seed/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
