@@ -6,19 +6,26 @@ the spec.
 
 ## Who is building
 
-A cloud Claude Code session is building this branch,
-`claude/local-ai-app-harness-ogb2iw`, one build step at a time. It commits
-and pushes after each step. A session on the Mac should **not** commit or
-push to this branch while the cloud session is building. To get the latest
-work, run `git pull`.
+A cloud Claude Code session is building this repository
+(github.com/19chrismo/wright, branch `main`) one build step at a time. It
+commits and pushes after each step. A session on the Mac should **not** commit
+or push here while the cloud session is building. To get the latest work, run
+`git pull`. (The app was first built inside Speed-tesla/wright; its full
+history moved here.)
 
 ## Status
 
 | Step | State |
 |---|---|
 | Brief v2 (`BRIEF.md`) | done |
-| 1. Harness loop with a shell tool | done: `wright demo step1`, `tests/test_step01_loop.py` |
-| 2–17 | in progress, in order |
+| 1. Harness loop with a shell tool | done |
+| 2. Quota pool | done |
+| 3. Knowledge packs | done |
+| 4. Memory stores | done |
+| 5. Regression baseline | done |
+| 6. Role contract and drift bounds | done |
+| 7. Procedural lock | done |
+| 8–17 | in progress, in order |
 
 ## Set up on a Mac
 
@@ -28,8 +35,8 @@ work, run `git pull`.
 2. From the repository root:
    ```
    python3.12 -m venv ~/.wright/venv
-   ~/.wright/venv/bin/pip install -e "./wright[test]"
-   ~/.wright/venv/bin/python -m pytest wright/tests
+   ~/.wright/venv/bin/pip install -e ".[test]"
+   ~/.wright/venv/bin/python -m pytest
    ~/.wright/venv/bin/wright demo step1
    ```
 3. Expected result: all tests pass, and the demo ends with
@@ -38,7 +45,7 @@ work, run `git pull`.
 ## Layout
 
 ```
-wright/
+(repository root)
   BRIEF.md            the spec (v2)
   HANDOFF.md          this file
   pyproject.toml      package; dependency: mcp>=2.3,<3 (official SDK)

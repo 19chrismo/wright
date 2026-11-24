@@ -1,7 +1,0 @@
-mcp<3,>=2.3
-
-[browser]
-playwright>=1.45
-
-[test]
-pytest>=8
