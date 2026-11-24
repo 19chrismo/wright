@@ -85,6 +85,10 @@ class App:
                            port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
                            control=self.control, force_ready=injected)
         self.control.on_ready = self.ui.resume_pending
+        from .updater import Updater
+        self.updater = Updater(self.config.paths.home, events=self.events)
+        self.control.updater = self.updater
+        self._auto_update = (not injected) and bool(self.config.data.get("auto_update", True))
 
     def info(self) -> dict[str, Any]:
         from .persist import load_task
@@ -103,6 +107,17 @@ class App:
         self.ui.start()
         if not self.ui.force_ready:
             self.control.show_setup()          # the window opens on what (if anything) still needs doing
+        if self._auto_update and self.updater.available():
+            import threading
+
+            def loop() -> None:
+                while True:
+                    try:
+                        self.updater.apply()
+                    except Exception as e:
+                        self.events.emit("notice", text=f"Couldn't check for improvements: {e}")
+                    time.sleep(24 * 3600)
+            threading.Thread(target=loop, daemon=True, name="wright-update").start()
         if window:
             open_window(self.ui.url, self.config.paths.home / "window-profile")
         return self

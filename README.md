@@ -49,6 +49,7 @@ before any AI model is set up:
 | "keep it private" · "use the cloud again" | Local-only mode on · off. |
 | "undo that" · "undo" again | Rolls back the last change Wright made · puts it back. |
 | "connect home assistant at http://…/api/mcp" | Attaches a device or service; a box asks for its access token. |
+| "update yourself" · "undo the update" | Checks for improvements now · goes back to the previous version. |
 
 - **Keys:** go straight from the key box to the macOS Keychain. They never
   appear in the chat, the logs or anything sent to an AI model.
@@ -71,6 +72,17 @@ before any AI model is set up:
   whose key did the work. Whether Google accepts pooled household keys is
   Google's call, and any consequence falls on the account that owns each key,
   so each person agrees for their own key.
+
+## It keeps improving: no versions to install
+
+- **Daily check:** Wright looks for improvements when it opens and once a day.
+- **Tested first:** each improvement is tested in a separate copy with
+  Wright's own test suite and taken only if every test passes. If anything
+  fails, Wright stays on the version that works and says so in the window.
+- **Your edits are safe:** local edits are never overwritten.
+- **When it takes effect:** the next time Wright opens.
+- **Undo:** "undo the update" goes back one step.
+- **Turning it off:** set `"auto_update": false` in `~/.wright/config.json`.
 
 ## What happens when you send a goal
 

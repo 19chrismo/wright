@@ -90,6 +90,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "mcp_servers": {},  # user-attached servers; built-ins are added in mcp_hub.BUILTIN_SERVERS
     "local_only": False,
+    "auto_update": True,          # fetch, test in staging, switch only when green; daily and at launch
 }
 
 

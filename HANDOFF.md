@@ -46,6 +46,13 @@ are exercised for the first time on the Mac:
 7. **Undo.** Type "undo that" and confirm the folder's file went back. Type
    "undo" again to restore it.
 
+## Updates
+
+The installed app updates itself from this repository's `main` branch. It
+tests each update in a staging copy first and holds it back if any test
+fails. A session on the Mac doesn't need to pull manually once Wright is
+installed. "update yourself" in the window forces a check.
+
 ## Rules for a session on the Mac
 
 - Do not commit or push while the cloud session is building. Use `git pull`

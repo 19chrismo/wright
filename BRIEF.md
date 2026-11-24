@@ -42,6 +42,19 @@ settings screen or a second app. Steps only a person can do (creating a key
 on their own account, physical steps) come as a single card or checklist in
 the chat.
 
+**Evolving, not versioned.** Nobody installs a "v2" or gets locked into an old
+version. Wright improves in place, continuously:
+
+- Each update is tested before it's taken, and any update can be undone.
+- Its own skills evolve the same way, through the self-modification gate.
+- The app never asks who someone is. A name on a key is an optional label,
+  not an account or a box.
+
+**Plenty, not scarcity.** The foundation is AI that runs on computers the
+household owns: no keys, no accounts, no usage limits, no fees, no tiers.
+Online services are optional extras, used within their own rules. Wright never
+works around a provider's limits by creating keys or accounts.
+
 **Platform.**
 - The app runs on my MacBook Air (Apple silicon, current macOS). It must also
   run on Linux, for tests and CI.
@@ -598,3 +611,9 @@ trivial, verifiable task. Show it running before moving to step 2.
 16. **One unit.** v1 implied it; v2 states it: setup, keys, privacy, undo and
     connections happen in the chat window, not in Terminal commands or
     settings screens.
+17. **Evolving, not versioned.** The app updates itself continuously, gated
+    by its own tests and undoable, instead of shipping versions people have
+    to move between. Identity is never required.
+18. **Plenty, not scarcity.** "No limits, no fees" rests on AI running on the
+    household's own computers, not on churning keys or accounts to get past
+    a provider's limits, which would put every account involved at risk.

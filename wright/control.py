@@ -42,6 +42,9 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("local_on", re.compile(r"^\s*(/local on|(keep|make) (it|everything|this) (private|local|offline)|"
                             r"local[- ]only( mode)?( on)?|(go|stay|work|run) (private|local|offline)( only)?)\s*\.?\s*$", re.I)),
     ("local_off", re.compile(r"^\s*(/local off|local[- ]only off|(use|allow) (the )?cloud( models?)?( again)?)\s*\.?\s*$", re.I)),
+    ("update", re.compile(r"^\s*(/update|update( now| yourself| wright)?|check for (updates|improvements)|"
+                          r"get the latest( version)?)\s*\.?\s*$", re.I)),
+    ("update_undo", re.compile(r"^\s*(/update undo|undo the (last )?update|go back to the (old|previous) version)\s*\.?\s*$", re.I)),
     ("undo", re.compile(r"^\s*(/undo|/rollback\s+\S+|undo( that| it| the last( change| promotion)?)?|"
                         r"roll ?back( that| the last change)?|revert( that| the last change)?)\s*\.?\s*$", re.I)),
     ("connect", re.compile(r"^\s*(/connect|connect)\s+(.{1,40}?)\s+(?:at|to|on)?\s*(https?://\S+)\s*$", re.I)),
@@ -114,6 +117,7 @@ class Control:
         self.runner = runner
         self.lock = threading.Lock()
         self.on_ready: Callable[[], None] | None = None     # e.g. start a goal that was waiting for setup
+        self.updater: Any = None                             # set by the app (continuous, test-gated updates)
 
     # ================================================================== setup status
     def ollama_base(self) -> str:
@@ -408,6 +412,15 @@ class Control:
             return self.set_local_only(a == "local_on")
         if a == "undo":
             return self.undo(args.get("snapshot"))
+        if a in ("update", "update_undo"):
+            if self.updater is None:
+                self.events.emit("notice", text="Updates aren't available in this copy of Wright.")
+                return {"ok": False}
+            if a == "update_undo":
+                return self.updater.rollback()
+            threading.Thread(target=self.updater.apply, daemon=True).start()
+            self.events.emit("notice", text="Checking for improvements…")
+            return {"ok": True, "message": "started"}
         if a == "connect":
             self.events.emit("token_card", name=args["name"], url=args["url"])
             return {"ok": True}

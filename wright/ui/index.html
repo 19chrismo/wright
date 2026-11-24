@@ -154,7 +154,7 @@ Object.assign(render,{
    c.querySelectorAll("button[data-act]").forEach(b=>b.onclick=()=>{b.disabled=true;post("/api/action",{action:b.dataset.act})});add(c)},
  key_card(e){const c=div("card",`<h3>Add an AI key</h3>
    <div class="form"><label>Service</label><select name="provider"><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
-   <label>Whose key</label><input name="owner" placeholder="e.g. Sam (leave empty if it's yours)" value="${esc(e.owner||"")}">
+   <label>Name (optional)</label><input name="owner" placeholder="optional — a name, or leave empty" value="${esc(e.owner||"")}">
    <label>Daily share</label><input name="cap" type="number" min="1" placeholder="optional — most requests per day">
    <label>Key</label><input name="key" type="password" autocomplete="off" placeholder="paste the key here"></div>
    <button class="primary" data-k="save">Save key</button> <a href="${esc(e.key_page||"#")}" target="_blank" rel="noopener">Get a free key</a>
@@ -173,6 +173,7 @@ Object.assign(render,{
    <button class="primary">Connect</button> <span class="small" data-k="out"></span>`,"token-card");
    c.querySelector("button").onclick=async()=>{const i=c.querySelector("input");const r=await post("/api/connect",{name:e.name,url:e.url,token:i.value});i.value="";
      c.querySelector("[data-k=out]").textContent=r.message};add(c)},
+ update(e){note(e.message,e.status==="updated"?"":e.status==="held_back"?"bad":"neutral")},
  key_added(e){note(e.message)}, key_removed(e){note(e.message,"neutral")}, local_only(e){note(e.message,"neutral")},
  undo(e){note(e.message,"neutral")}, connected(e){note(e.message)}, notice(e){note(e.text,"neutral")},
  setup_progress(e){note(e.text,e.done?(e.ok?"":"bad"):"neutral")},
