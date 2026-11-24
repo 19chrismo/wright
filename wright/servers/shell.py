@@ -14,6 +14,7 @@ def run_command(command: str, cwd: str, timeout: float = 120, deny_write: list[P
                 deny_read: list[Path] | None = None) -> dict:
     argv = wrap(command, deny_write or [], deny_read or [])
     env = {k: v for k, v in os.environ.items() if not k.startswith("WRIGHT_KEY")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
         p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=min(timeout, 600),
                            env=env)

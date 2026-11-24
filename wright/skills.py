@@ -170,8 +170,11 @@ class SkillLibrary:
         return self.save(skill, f"promoted from task {task.id}"), "promoted"
 
 
-def skill_tools(lib: SkillLibrary, execute: Executor, get_task: Callable[[], Any]) -> list:
-    """Each active skill becomes a tool; its test runs before each use and demotes it on failure."""
+def skill_tools(lib: SkillLibrary, execute: Executor, get_task: Callable[[], Any],
+                run_execute: Executor | None = None) -> list:
+    """Each active skill becomes a tool; its test runs before each use and demotes it on failure.
+    `execute` runs regression tests in scratch dirs; `run_execute` runs real use through the harness
+    gates (contract, lock, danger), so a skill can never do what the agent itself may not."""
     from .tools import Tool, ToolResult, obj
 
     tools = []
@@ -186,7 +189,7 @@ def skill_tools(lib: SkillLibrary, execute: Executor, get_task: Callable[[], Any
                 lib.save(sk, "auto-demoted: regression test failed before use")
                 return ToolResult(f"skill {_name} failed its regression test and was demoted: "
                                   + json.dumps(res)[:400], is_error=True)
-            ok, log = lib.run(sk, a, Path(get_task().workdir), execute)
+            ok, log = lib.run(sk, a, Path(get_task().workdir), run_execute or execute)
             return ToolResult("\n".join(log), is_error=not ok)
 
         props = {k: {"type": v.get("type", "string")} for k, v in s.params.items()}

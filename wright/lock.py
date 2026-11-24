@@ -364,9 +364,13 @@ class Lock:
                 return ToolResult(f"REJECTED: subtasks complete in order; the open one is {cur['id']}",
                                   is_error=True)
             lv = t.state.get("last_verify")
-            if t.state.get("mutates", True) and self._mutated_since(t, (lv or {}).get("ledger_len", 0)):
-                return ToolResult("REJECTED: changes since the last verification gate; run verify__run first",
-                                  is_error=True)
+            if t.state.get("mutates", True):
+                if self._mutated_since(t, (lv or {}).get("ledger_len", 0)):
+                    return ToolResult("REJECTED: changes since the last verification gate; run verify__run first",
+                                      is_error=True)
+                if lv is not None and not lv["green"]:
+                    return ToolResult("REJECTED: the last verify__run was RED; a subtask is done only when the "
+                                      "hooks are green", is_error=True)
             cur["status"] = "done"
             cur["evidence"] = a.get("evidence", "")
             t.state["new_context"] = True                 # next subtask starts in a fresh context
@@ -418,6 +422,7 @@ class Lock:
                             + "; ".join(f"{r['name']}: {str(r.get('detail', ''))[:200]}" for r in bad)
                             + ". Needed: a fix for the hook above, or a corrected acceptance criterion.")
             self.on_checkpoint(t)
+            self.events.emit("verify", task=t.id, ok=green, results=results)
             head = "GREEN" if green else "RED"
             return ToolResult(f"VERIFY {head}\n" + json.dumps(results, indent=1)[:6000], is_error=not green)
 

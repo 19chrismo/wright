@@ -285,6 +285,8 @@ def knowledge_tools(get_task: Callable[[], Any], fetcher: Callable[[str], web.Pa
             src, msg = capture_url(pack(), loc, int(a["tier"]), a.get("excerpt", ""),
                                    a.get("version_applies", ""), a.get("component", ""), fetcher, cache_dir)
         else:
+            if not Path(loc).expanduser().is_absolute():
+                loc = str(Path(get_task().workdir, loc))
             src, msg = capture_file(pack(), loc, int(a["tier"]), a.get("excerpt", ""),
                                     a.get("version_applies", ""), a.get("component", ""))
         if src is None:

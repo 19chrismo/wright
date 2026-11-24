@@ -34,6 +34,11 @@ def _sub(text: str, ctx: dict[str, str]) -> str:
     return text
 
 
+# Checks never write Python bytecode caches: an edit that keeps size and mtime-second identical
+# (e.g. "a - b" → "a + b") would otherwise be judged against stale bytecode.
+CHECK_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def run_check(spec: dict, cwd: Path | str, ledger: list[dict] | None = None,
               ctx: dict[str, str] | None = None) -> CheckResult:
     """Run one check spec. `cwd` is where commands and relative paths resolve (sandbox or real)."""
@@ -45,7 +50,7 @@ def run_check(spec: dict, cwd: Path | str, ledger: list[dict] | None = None,
         if kind == "command":
             cmd = _sub(spec["run"], ctx)
             p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout)
+                               timeout=timeout, env=CHECK_ENV)
             want = int(spec.get("expect_exit", 0))
             ok = p.returncode == want
             out = (p.stdout + p.stderr).strip()
@@ -88,7 +93,7 @@ def run_check(spec: dict, cwd: Path | str, ledger: list[dict] | None = None,
             # baseline manifest, so here we only measure. ok = the command produced a number.
             cmd = _sub(spec["run"], ctx)
             p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout)
+                               timeout=timeout, env=CHECK_ENV)
             m = re.search(r"-?\d+(?:\.\d+)?", p.stdout)
             if p.returncode != 0 or not m:
                 return CheckResult(name, False, None, (p.stdout + p.stderr)[-300:])
