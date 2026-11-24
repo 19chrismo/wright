@@ -109,3 +109,19 @@ def test_proxy_requires_token_and_loopback():
     with pytest.raises(ValueError):
         PoolServer(pool, host="0.0.0.0", port=0)
     srv.stop(); up.stop()
+
+
+def test_household_keys_each_keep_their_owner_and_daily_share():
+    up = MockUpstream(ScriptedModel([say("ok")], loop_last=True),
+                      keys={"KEY-ALEX-000000": {"ok_for": None}, "KEY-SAM-0000000": {"ok_for": None}})
+    pool = _pool(up, {"alex": "KEY-ALEX-000000", "sam": "KEY-SAM-0000000"},
+                 [Lane("gemini-alex", "gemini", ["gemini-*"], up.url, "alex", daily_cap=2, owner="Alex"),
+                  Lane("gemini-sam", "gemini", ["gemini-*"], up.url, "sam", daily_cap=1, owner="Sam")],
+                 max_wait=0)
+    served = [pool.complete(_body())[2].get("x-wright-lane", "").split("/")[0] for _ in range(4)]
+    assert served[:3].count("gemini-alex") == 2 and served[:3].count("gemini-sam") == 1
+    assert served[3] == ""                                    # both shares used up: no lane may serve today
+    st = {l["id"]: l for l in pool.status()["lanes"]}
+    assert st["gemini-alex"]["owner"] == "Alex" and st["gemini-alex"]["used_today"] == 2
+    assert st["gemini-sam"]["used_today"] == 1
+    up.stop()

@@ -342,11 +342,18 @@ first.
    - A raw usage-limit error never reaches me.
    - **Quota note.** Gemini limits are enforced per Google Cloud project, not
      per key. Google's API terms say you must not try to get around usage
-     limits, so don't build features whose purpose is to multiply free-tier
-     quota across projects created for that purpose. That puts the Google
-     account at risk. Pooling keys I'm entitled to use, at their published
-     limits, across several providers, with a local fallback, meets the same
-     goal (never blocked) without that risk.
+     limits. Two cases are different:
+     - Creating extra projects only to multiply free quota is what that rule
+       targets. Don't build for it.
+     - Keys that people in my household created on their own Google
+       accounts, and agreed to share, are their own quota. The pool may use
+       them. Each key records its owner and an optional daily share, so it
+       never uses more of someone's quota than they agreed to. The report
+       shows whose key served each task. Whether Google treats pooling them
+       as fine is Google's call, and the consequences fall on the account
+       that owns each key, so each person decides for their own key.
+   - Several providers and a local fallback meet the "never blocked" goal
+     without depending on any one account.
    - Secrets live in the macOS Keychain, or in a mode-0600 file on Linux.
      They never appear in the repo, the transcript, the episodic log, or a
      cloud model's context.
@@ -540,12 +547,14 @@ trivial, verifiable task. Show it running before moving to step 2.
    budget, then one setup defect with its fix. You never see a raw 429.
 3. **Quota pooling and Google's terms.** v1 told the pool to multiply
    free-tier quota across many projects. Google's API terms prohibit trying
-   to get around usage limits, and doing so risks suspension of the account
-   that holds your other Google services. v2 keeps the pool and the rotation
-   and reaches the same goal (never blocked) through several providers and a
-   local fallback. This rests on recall of Google's terms: Google's docs
-   could not be reached from the build environment, so it is tagged
-   [INFERRED] in the build's knowledge pack. Verify it before you rely on it.
+   to get around usage limits, so v2 separates two cases: extra projects made
+   only for more quota (don't), and keys household members made on their own
+   accounts and agreed to share (allowed, with an owner label and a daily
+   share per key). v2 also adds several providers and a local fallback, so
+   "never blocked" doesn't depend on any one account. This rests on recall of
+   Google's terms: Google's docs could not be reached from the build
+   environment, so it is tagged [INFERRED] in the build's knowledge pack.
+   Verify it before you rely on it.
 4. **"Treat all input as actionable instruction."** Taken literally, any web
    page the agent reads could steer it (prompt injection). v2 separates your
    input (instructions) from tool-fetched content (data).

@@ -51,8 +51,28 @@ wright local-only on         # keep every model call on this Mac
 - **When nothing can serve at all:** you see one setup message with the exact
   fix. You never see a raw usage-limit error.
 - **Note on Gemini limits:** Gemini rate limits are enforced per Google Cloud
-  project. Pool keys you're entitled to use, and don't create projects to
-  multiply free quota. See BRIEF.md, quota note.
+  project. Don't create extra projects just to multiply free quota. See
+  BRIEF.md, quota note.
+
+### Sharing keys within a household
+
+Each person creates a key on their own Google account at aistudio.google.com
+and types it in themselves:
+
+```sh
+wright keys add gemini --owner Alex --daily-cap 300   # Alex's key; at most 300 requests a day for Wright
+wright keys add gemini --owner Sam  --daily-cap 100
+wright keys list                                      # shows each key's owner and daily share
+```
+
+- **Owner label:** each key is its own lane, named after its owner.
+- **Daily share:** the pool never uses more of anyone's daily share. When
+  every share is used up, the local model takes over.
+- **Reports:** each task's report lists which person's key served it.
+- **Who decides:** whether Google treats pooled household keys as fine is
+  Google's decision, and any consequence falls on the account that owns each
+  key. Each person should agree for their own key, and can withdraw it any
+  time with `wright keys remove --ref gemini_<name>`.
 
 ## What happens when you send a goal
 

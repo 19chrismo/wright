@@ -48,6 +48,8 @@ class Lane:
     key_ref: str | None = None              # name in the KeyStore; never the key itself
     local: bool = False
     daily_caps: dict[str, int] = field(default_factory=dict)   # model -> max requests per day
+    daily_cap: int | None = None            # whole-lane requests per day (e.g. a family member's share)
+    owner: str = ""                         # whose key/project this is; shown in status and reports
 
     def __post_init__(self) -> None:
         self.base_url = (self.base_url or PROVIDER_DEFAULTS.get(self.provider, "")).rstrip("/")
@@ -132,12 +134,13 @@ class Pool:
             return False
         if self.cooldown.get((lane.id, self.group(model)), 0) > now:
             return False
+        if st.day != self._today():
+            st.day, st.day_counts = self._today(), {}
         cap = lane.daily_caps.get(model)
-        if cap is not None:
-            if st.day != self._today():
-                st.day, st.day_counts = self._today(), {}
-            if st.day_counts.get(model, 0) >= cap:
-                return False
+        if cap is not None and st.day_counts.get(model, 0) >= cap:
+            return False
+        if lane.daily_cap is not None and st.day_counts.get("__total__", 0) >= lane.daily_cap:
+            return False
         return True
 
     def plan(self, requested: str) -> list[tuple[str, Lane]]:
@@ -215,8 +218,8 @@ class Pool:
                 if status == 200 and data.get("choices"):
                     with self.lock:
                         st.ok += 1
-                        if lane.daily_caps.get(model) is not None:
-                            st.day_counts[model] = st.day_counts.get(model, 0) + 1
+                        st.day_counts[model] = st.day_counts.get(model, 0) + 1
+                        st.day_counts["__total__"] = st.day_counts.get("__total__", 0) + 1
                     degraded = model != first_choice
                     self.on_event({"kind": "lane", "lane": lane.id, "model": model,
                                    "degraded": degraded})
@@ -262,6 +265,12 @@ class Pool:
 
     def setup_fix(self) -> str:
         local = [l for l in self.lanes if l.local]
+        capped = [l.owner or l.id for l in self.lanes if l.daily_cap is not None
+                  and self.stats[l.id].day_counts.get("__total__", 0) >= l.daily_cap]
+        if capped and not local:
+            return (f"Today's agreed shares are used up on: {', '.join(capped)}. Add a local model so work "
+                    "continues (install Ollama, then `ollama pull qwen2.5:7b`), or raise a share with "
+                    "`wright keys remove` + `wright keys add ... --daily-cap N`.")
         if not local:
             return ("Every cloud lane is cooling down and no local lane is configured. Install "
                     "Ollama (https://ollama.com), run `ollama pull qwen2.5vl:7b`, then `wright doctor`.")
@@ -277,6 +286,9 @@ class Pool:
         with self.lock:
             return {"lanes": [{
                 "id": l.id, "provider": l.provider, "local": l.local, "models": l.models,
+                "owner": l.owner, "daily_cap": l.daily_cap,
+                "used_today": self.stats[l.id].day_counts.get("__total__", 0)
+                if self.stats[l.id].day == self._today() else 0,
                 "has_key": bool(l.key_ref and self.key_lookup(l.key_ref)) if l.key_ref else None,
                 **{k: v for k, v in vars(self.stats[l.id]).items() if k != "day_counts"},
                 "cooling": {g: round(u - now, 1) for (lid, g), u in self.cooldown.items()
@@ -287,7 +299,8 @@ class Pool:
 def lanes_from_config(cfg: list[dict]) -> list[Lane]:
     return [Lane(id=c["id"], provider=c["provider"], models=c.get("models", ["*"]),
                  base_url=c.get("base_url", ""), key_ref=c.get("key_ref"),
-                 local=bool(c.get("local")), daily_caps=c.get("daily_caps", {})) for c in cfg]
+                 local=bool(c.get("local")), daily_caps=c.get("daily_caps", {}),
+                 daily_cap=c.get("daily_cap"), owner=c.get("owner", "")) for c in cfg]
 
 
 # ==================================================================== HTTP proxy

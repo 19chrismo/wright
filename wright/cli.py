@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     k.add_argument("provider", nargs="?", help="gemini | openai | openrouter")
     k.add_argument("--model", action="append", help="model name to put in the auto route (repeatable)")
     k.add_argument("--ref", help="key reference to remove")
+    k.add_argument("--owner", help="whose key this is (e.g. a household member); shown in reports")
+    k.add_argument("--daily-cap", type=int, help="most requests per day this key may serve for Wright")
     m = sub.add_parser("mcp", help="attach or detach external MCP servers")
     m.add_argument("action", choices=["add", "list", "remove"])
     m.add_argument("name", nargs="?")
@@ -83,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
             for lane in lanes:
                 ref = lane.get("key_ref")
                 state = "local" if lane.get("local") else ("key stored" if ref and ks.get(ref) else "NO KEY")
-                print(f"{lane['id']:14s} {lane['provider']:10s} {state}")
+                extra = (f"  owner {lane['owner']}" if lane.get("owner") else "") + \
+                        (f"  cap {lane['daily_cap']}/day" if lane.get("daily_cap") else "")
+                print(f"{lane['id']:18s} {lane['provider']:10s} {state}{extra}")
             return 0
         if args.action == "set":
             ref = args.provider or args.ref
@@ -109,19 +113,32 @@ def main(argv: list[str] | None = None) -> int:
         if len(key) < 10:
             print("that does not look like a key; nothing saved", file=sys.stderr)
             return 1
+        import re as _re
+        owner = _re.sub(r"[^a-z0-9]+", "-", (args.owner or "").lower()).strip("-")
         n = 1 + sum(1 for l in lanes if l["provider"] == prov)
-        ref = f"{prov}_{n}"
+        lane_id = f"{prov}-{owner}" if owner else f"{prov}-{n}"
+        if any(l["id"] == lane_id for l in lanes):
+            print(f"a lane named {lane_id} already exists; remove it first (wright keys remove --ref "
+                  f"{lane_id.replace('-', '_')})", file=sys.stderr)
+            return 1
+        ref = lane_id.replace("-", "_")
         ks.set(ref, key)
-        lanes.insert(len([l for l in lanes if not l.get("local")]),
-                     {"id": f"{prov}-{n}", "provider": prov, "models": PROVIDERS[prov], "key_ref": ref})
+        lane = {"id": lane_id, "provider": prov, "models": PROVIDERS[prov], "key_ref": ref}
+        if owner:
+            lane["owner"] = args.owner
+        if args.daily_cap:
+            lane["daily_cap"] = args.daily_cap
+        lanes.insert(len([l for l in lanes if not l.get("local")]), lane)
         if args.model:
             auto = cfg.data["pool"]["routes"]["auto"]
             local = [x for x in auto if x.startswith("ollama:")]
             cfg.data["pool"]["routes"]["auto"] = [x for x in auto if not x.startswith("ollama:") and x not in args.model] \
                 + args.model + local
         cfg.save()
-        print(f"saved as {ref} ({'macOS Keychain' if ks.keychain else 'protected key file'}); lane {prov}-{n} added. "
-              "Run `wright doctor` to test it.")
+        print(f"saved as {ref} ({'macOS Keychain' if ks.keychain else 'protected key file'}); lane {lane_id} added"
+              + (f" for {args.owner}" if owner else "")
+              + (f", at most {args.daily_cap} requests a day" if args.daily_cap else "")
+              + ". Run `wright doctor` to test it.")
         return 0
     if cmd == "mcp":
         servers = cfg.data.setdefault("mcp_servers", {})
