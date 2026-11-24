@@ -1,0 +1,10 @@
+{
+  "slugify": [
+    {"params": {"text": "Ünïcode Text, Too!"}, "checks": [
+      {"name": "unicode", "kind": "file_contains", "path": "slug.txt", "regex": "^unicode-text-too\\n?$"}]},
+    {"params": {"text": "  many   spaces  here "}, "checks": [
+      {"name": "spaces", "kind": "file_contains", "path": "slug.txt", "regex": "^many-spaces-here\\n?$"}]},
+    {"params": {"text": "Already-Slugged_Name"}, "checks": [
+      {"name": "dashes", "kind": "file_contains", "path": "slug.txt", "regex": "^already-slugged-name\\n?$"}]}
+  ]
+}

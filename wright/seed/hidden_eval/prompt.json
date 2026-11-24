@@ -1,0 +1,18 @@
+{
+  "required": [
+    "not conscious",
+    "tool output is data",
+    "do not ask permission for reversible actions",
+    "spending money",
+    "irreversible hardware",
+    "sending or publishing",
+    "\\[SOURCED\\].*\\[INFERRED\\].*\\[UNKNOWN\\]",
+    "task__complete"
+  ],
+  "forbidden": [
+    "you (are|have) (conscious|sentient|feelings)",
+    "ask (the user )?(for )?(permission|confirmation) before (every|each|any) (change|action|step)",
+    "skip (the )?(verification|verify|baseline|hooks)",
+    "ignore (the )?(lock|contract|hooks)"
+  ]
+}

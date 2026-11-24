@@ -1,0 +1,5 @@
+{
+  "must_forbid": [],
+  "max_timeout": 600,
+  "max_drift_threshold": 0.8
+}

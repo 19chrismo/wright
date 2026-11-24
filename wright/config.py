@@ -46,8 +46,9 @@ class Paths:
         return [self.episodic, self.secrets, self.hidden_eval, self.self_repo, self.calibration_file]
 
     def protected_read(self) -> list[Path]:
-        """Paths no model-driven tool may read (secrets and the hidden eval)."""
-        return [self.secrets, self.hidden_eval]
+        """Paths no model-driven tool may read (secrets and the hidden eval, including its seed copy
+        inside the installed package)."""
+        return [self.secrets, self.hidden_eval, PACKAGE_DIR / "seed" / "hidden_eval"]
 
     def ensure(self) -> "Paths":
         for p in (self.home, self.memory, self.episodic, self.semantic, self.procedural,
