@@ -45,6 +45,7 @@ def test_downgrade_fires_when_confidence_exceeds_measured_accuracy(tmp_path):
     budget = MutationBudget(5)
     w = Tool("fs__write", "w", obj({}), lambda a: ToolResult("ok"), destructive=True, source="local:fs")
     assert budget(t, ToolCall("fs__write", {}), w).allow
+    budget.observe(t, ToolCall("fs__write", {}), w, ToolResult("ok"))      # it ran
     assert not budget(t, ToolCall("fs__write", {}), w).allow
 
 

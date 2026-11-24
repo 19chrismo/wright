@@ -101,11 +101,12 @@ class Agent:
 
         # ---- the loop with its gates
         self.danger = DangerGate(confirm, self.events)
+        self.budget = MutationBudget(hcfg["mutations_per_gate"])
         self.harness = Harness(
             model, self.registry, self.events, system_prompt=self.lock.system_prompt,
             gates=[ContractGate(self.contract, self.deny_w, self.deny_r), self.lock,
-                   DriftMonitor(self.contract), MutationBudget(hcfg["mutations_per_gate"]), self.danger],
-            observers=[self.lock.stamp, self.lock.reset_idle, injection_observer, self.lock.audit,
+                   DriftMonitor(self.contract), self.budget, self.danger],
+            observers=[self.lock.stamp, self.lock.reset_idle, self.budget.observe, injection_observer, self.lock.audit,
                        lambda t, c, tool, r: self.checkpoint(t)],
             visible_tools=self.lock.visible_tools, context_builder=self.lock.context_builder,
             end_of_turn=self.lock.end_of_turn, max_steps=hcfg["max_steps_per_task"],

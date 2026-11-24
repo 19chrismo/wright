@@ -73,7 +73,7 @@ def classify(call: ToolCall, tool: Tool | None, sandbox_root: str | None) -> lis
             from .sandboxing import path_tokens
             outside = [t for t in path_tokens(text) if t.startswith(("/", "~", "$HOME"))
                        and not (sandbox_root and t.startswith(sandbox_root))
-                       and not t.startswith(("/dev/null", "/tmp/"))]
+                       and not t.startswith("/dev/null")]
             if not outside and not re.search(r"\b(DROP|TRUNCATE|kubectl|docker)\b", text, re.I):
                 continue
         risks.append(Risk(sev, cat, f"matched {m.group(0)!r}"))

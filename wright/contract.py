@@ -250,8 +250,13 @@ class MutationBudget:
         if n >= b:
             return Verdict(False, f"{n} mutations since the last verification gate (budget {b}). "
                                   "Run verify__run before making more changes.")
-        task.state["mutations_since_gate"] = n + 1
         return ALLOW
+
+    def observe(self, task: Task, call: ToolCall, tool: Tool | None, res: ToolResult) -> None:
+        """Count only mutations that actually ran (a call blocked by a later gate costs nothing)."""
+        if tool is None or tool.source == "core" or not tool.is_mutating or res.data.get("blocked"):
+            return
+        task.state["mutations_since_gate"] = task.state.get("mutations_since_gate", 0) + 1
 
 
 INJECTION = re.compile(

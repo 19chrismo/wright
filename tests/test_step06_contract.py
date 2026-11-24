@@ -25,7 +25,7 @@ def run(tmp_path, steps, contract=None, extra_tools=(), gates=None):
     holder["t"] = task
     Harness(ScriptedModel(steps), reg, ev,
             gates=gates or [ContractGate(c, [tmp_path / "protected"], []), DriftMonitor(c), MutationBudget(5)],
-            observers=[injection_observer]).run(task)
+            observers=[injection_observer, MutationBudget(5).observe]).run(task)
     return task, ev
 
 
@@ -81,7 +81,8 @@ def test_mutation_budget_forces_verification_gate(tmp_path):
     task = Task(goal="g", workdir=work)
     holder_task["t"] = task
     ev = EventBus()
-    Harness(ScriptedModel(steps), reg, ev, gates=[MutationBudget(5)]).run(task)
+    mb = MutationBudget(5)
+    Harness(ScriptedModel(steps), reg, ev, gates=[mb], observers=[mb.observe]).run(task)
     b = ev.of("blocked")
     assert len(b) == 1 and "Run verify__run" in b[0]["reason"]
     assert not (work / "f5.txt").exists() and (work / "f6.txt").exists()

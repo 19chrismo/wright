@@ -38,7 +38,7 @@ def build(tmp_path, steps, **lock_kw):
     task = Task(goal="Make app.sh print v2", workdir=work)
     holder["t"] = task
     h = Harness(ScriptedModel(steps), reg, ev, gates=[lock, MutationBudget(5)],
-                observers=[lock.stamp, lock.reset_idle, lock.audit], visible_tools=lock.visible_tools,
+                observers=[lock.stamp, lock.reset_idle, lock.audit, MutationBudget(5).observe], visible_tools=lock.visible_tools,
                 context_builder=lock.context_builder, end_of_turn=lock.end_of_turn)
     return h, task, ev, lock
 
