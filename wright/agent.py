@@ -360,9 +360,14 @@ class Agent:
         try:
             with keep_awake(self.power_command, self.events):
                 self.harness.run(task)
-        finally:
-            self._finish(task)
+        except (KeyboardInterrupt, SystemExit):
+            # Quit mid-task: leave it resumable (status stays "running") instead of failing it.
+            self.checkpoint(task)
+            self.events.emit("interrupted", task=task.id, steps=task.steps)
             self.current = None
+            raise
+        self._finish(task)
+        self.current = None
         return task
 
     def _finish(self, task: Task) -> None:

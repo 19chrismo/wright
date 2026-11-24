@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Regression baseline manifest",
+  "type": "object",
+  "required": [
+    "id",
+    "target",
+    "dimensions",
+    "frozen",
+    "version"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "frozen_at": {
+      "type": "number"
+    },
+    "flaky_runs": {
+      "type": "integer"
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "check",
+          "direction"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "check": {
+            "$ref": "check.schema.json"
+          },
+          "direction": {
+            "enum": [
+              "pass",
+              "higher",
+              "lower"
+            ]
+          },
+          "tolerance": {
+            "type": "number"
+          },
+          "abs_tolerance": {
+            "type": "number"
+          },
+          "origin": {
+            "enum": [
+              "baseline",
+              "fixed-case",
+              "acceptance"
+            ]
+          }
+        }
+      }
+    },
+    "frozen": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "value": {},
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "flakes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

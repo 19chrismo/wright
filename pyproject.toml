@@ -11,7 +11,7 @@ dependencies = ["mcp>=2.3,<3"]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
-test = ["pytest>=8"]
+test = ["pytest>=8", "jsonschema>=4.20"]
 
 [project.scripts]
 wright = "wright.cli:main"

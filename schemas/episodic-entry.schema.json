@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Episodic log row (append-only, hash-chained)",
+  "type": "object",
+  "required": [
+    "seq",
+    "ts",
+    "prev",
+    "hash",
+    "entry"
+  ],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ts": {
+      "type": "number"
+    },
+    "prev": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "task"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "task_id",
+          "goal",
+          "domain",
+          "task_type",
+          "sources",
+          "decisions",
+          "actions",
+          "outcome",
+          "failures"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "done",
+              "failed",
+              "blocked",
+              "running"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "failures": {
+            "type": "object"
+          },
+          "out_of_scope": {
+            "type": "array"
+          },
+          "flags": {
+            "type": "array"
+          },
+          "dangers": {
+            "type": "array"
+          }
+        }
+      }
+    }
+  }
+}

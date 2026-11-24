@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deterministic check (acceptance criterion, baseline dimension, skill test)",
+  "type": "object",
+  "required": [
+    "kind"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "command",
+        "file_exists",
+        "file_contains",
+        "http",
+        "tcp",
+        "metric",
+        "ledger_ran"
+      ]
+    },
+    "run": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "regex": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "port": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "pattern": {
+      "type": "string"
+    },
+    "expect_exit": {
+      "type": "integer"
+    },
+    "expect_status": {
+      "type": "integer"
+    },
+    "expect_regex": {
+      "type": "string"
+    },
+    "timeout": {
+      "type": "number"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "command",
+              "metric"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "run"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "file_exists",
+              "file_contains"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "http"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "tcp"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host",
+          "port"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ledger_ran"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "pattern"
+        ]
+      }
+    }
+  ]
+}

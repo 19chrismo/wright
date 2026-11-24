@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skill definition with its regression test",
+  "type": "object",
+  "required": [
+    "name",
+    "description",
+    "steps",
+    "test",
+    "version",
+    "status"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,40}$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "tool",
+          "args"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "args": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "test": {
+      "type": "object",
+      "required": [
+        "checks"
+      ],
+      "properties": {
+        "params": {
+          "type": "object"
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "check.schema.json"
+          }
+        }
+      }
+    },
+    "domain": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "active",
+        "demoted"
+      ]
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "version",
+          "status",
+          "note"
+        ]
+      }
+    },
+    "origin": {
+      "type": "string"
+    }
+  }
+}

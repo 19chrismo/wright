@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Knowledge pack",
+  "type": "object",
+  "required": [
+    "id",
+    "domain",
+    "task_type",
+    "sources",
+    "decisions",
+    "version",
+    "system_versions"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string"
+    },
+    "intent": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "created": {
+      "type": "number"
+    },
+    "system_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "version",
+          "evidence"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "read_at": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "locator",
+          "tier",
+          "retrieved_at",
+          "reachable"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "locator": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "retrieved_at": {
+            "type": "number"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "version_applies": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "statement",
+          "tag",
+          "confidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "tag": {
+            "enum": [
+              "SOURCED",
+              "INFERRED",
+              "UNKNOWN"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "chain": {
+            "type": "string"
+          },
+          "mitigation": {
+            "enum": [
+              "",
+              "sandbox_test",
+              "research",
+              "escalate"
+            ]
+          },
+          "supports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "normal",
+              "sandbox-test-first"
+            ]
+          },
+          "grade": {
+            "enum": [
+              null,
+              "held",
+              "wrong"
+            ]
+          },
+          "made_at": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}

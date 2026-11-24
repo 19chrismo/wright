@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Role contract",
+  "type": "object",
+  "required": [
+    "role",
+    "version",
+    "allowed_tools",
+    "forbidden_tools",
+    "write_scope",
+    "read_scope"
+  ],
+  "properties": {
+    "role": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "allowed_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbidden_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "param_bounds": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "max": {
+              "type": "number"
+            },
+            "min": {
+              "type": "number"
+            },
+            "max_len": {
+              "type": "integer"
+            },
+            "enum": {
+              "type": "array"
+            },
+            "pattern": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "read_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "write_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expected_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "drift_window": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "drift_threshold": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    }
+  }
+}

@@ -17,7 +17,7 @@ from wright.tools import Tool, ToolResult, obj
 def seed(log, domain, tool, task_type, grades, conf=0.9):
     for i, g in enumerate(grades):
         log.append({"type": "task", "task_id": f"seed{i}", "goal": f"seed task {i}", "domain": domain,
-                    "task_type": task_type, "outcome": "done", "failures": {},
+                    "task_type": task_type, "outcome": "done", "failures": {}, "sources": [], "actions": [],
                     "decisions": [{"id": "D1", "tag": "INFERRED", "confidence": conf, "grade": g,
                                    "tool": tool, "statement": "x"}]})
 

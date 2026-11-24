@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -105,8 +106,34 @@ class App:
         self.agent.close()
 
 
+def _running_instance(lock: Path) -> str | None:
+    """Single instance: if Wright is already running, return its window URL."""
+    import json
+    import urllib.request
+    try:
+        info = json.loads(lock.read_text())
+        os.kill(int(info["pid"]), 0)
+        urllib.request.urlopen(info["url"].split("?")[0], timeout=2)
+    except urllib.error.HTTPError:
+        return info["url"]            # 401 without the cookie: it is alive
+    except Exception:
+        return None
+    return info["url"]
+
+
 def run_app(window: bool = True) -> int:
-    app = App().start(window)
+    import json
+    cfg = Config.load()
+    lock = cfg.paths.home / "app.json"
+    url = _running_instance(lock)
+    if url:
+        if window:
+            open_window(url, cfg.paths.home / "window-profile")
+        print(f"Wright is already running: {url}")
+        return 0
+    app = App(cfg).start(window)
+    lock.write_text(json.dumps({"pid": os.getpid(), "url": app.ui.url}))
+    os.chmod(lock, 0o600)
     print(f"Wright is running. Window: {app.ui.url}\nPress Ctrl+C to quit.", flush=True)
     try:
         while True:
@@ -114,5 +141,6 @@ def run_app(window: bool = True) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        lock.unlink(missing_ok=True)
         app.stop()
     return 0

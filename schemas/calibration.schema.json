@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Calibration table",
+  "type": "object",
+  "required": [
+    "buckets",
+    "episodes_seen",
+    "gap",
+    "min_samples"
+  ],
+  "properties": {
+    "episodes_seen": {
+      "type": "integer"
+    },
+    "updated": {
+      "type": "number"
+    },
+    "gap": {
+      "type": "number"
+    },
+    "min_samples": {
+      "type": "integer"
+    },
+    "buckets": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[^|]+\\|[^|]+\\|[^|]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "held",
+          "wrong",
+          "sourced_held",
+          "sourced_wrong",
+          "inferred_held",
+          "inferred_wrong",
+          "confidence_sum"
+        ],
+        "properties": {
+          "held": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wrong": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sourced_held": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sourced_wrong": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inferred_held": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inferred_wrong": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "confidence_sum": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}
