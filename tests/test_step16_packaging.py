@@ -24,7 +24,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_macos_sleep_assertion_command(monkeypatch):
     monkeypatch.setattr(power.sys, "platform", "darwin")
     monkeypatch.setattr(power.shutil, "which", lambda n: "/usr/bin/" + n if n == "caffeinate" else None)
+    monkeypatch.setattr(power, "on_ac_power", lambda: False)
     assert power.assertion_command(4242) == ["caffeinate", "-i", "-w", "4242"]
+    monkeypatch.setattr(power, "on_ac_power", lambda: True)                      # on mains: -s as well
+    assert power.assertion_command(4242) == ["caffeinate", "-i", "-s", "-w", "4242"]
 
 
 def _alive(pattern):
@@ -172,3 +175,39 @@ def test_two_update_checks_cannot_run_at_once(tmp_path):
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert u.apply()["status"] == "busy"
     assert u.apply()["status"] == "unavailable"                          # lock free again
+
+
+def test_doctor_reads_the_machine_facts_from_the_system(monkeypatch):
+    from wright import doctor
+    outputs = {("sysctl", "-n", "hw.model"): "MacBookAir7,2", ("sw_vers", "-productVersion"): "14.8.9",
+               ("sw_vers", "-buildVersion"): "23J631", ("sysctl", "-n", "hw.memsize"): str(8 * 1024 ** 3),
+               ("nvram", f"{doctor.OPENCORE_GUID}:opencore-version"): f"{doctor.OPENCORE_GUID}:opencore-version\tREL-106-2025-11-03",
+               ("nvram", f"{doctor.OPENCORE_GUID}:OCLP-Version"): "",
+               ("vm_stat",): "Mach Virtual Memory Statistics: (page size of 4096 bytes)\nPages free:  262144.\nPages inactive:  262144.\n",
+               ("pmset", "-g", "batt"): "Now drawing from 'AC Power'\n -InternalBattery-0 100%"}
+
+    def run(argv, **kw):
+        out = outputs.get(tuple(argv), "")
+        return type("P", (), {"returncode": 0 if out else 1, "stdout": out})()
+    monkeypatch.setattr(doctor.sys, "platform", "darwin")
+    f = doctor.machine_facts(run)
+    assert f["model"] == "MacBookAir7,2" and f["macos"] == "14.8.9 (23J631)" and f["memory_gb"] == 8.0
+    assert f["opencore"] == "REL-106-2025-11-03" and f["oclp"] == "not detected"
+    assert f["free_memory_gb"] == 2.0 and f["ac_power"] is True
+
+
+def test_doctor_measures_local_model_speed(tmp_path):
+    from wright.doctor import local_tokens_per_second
+    from wright.testkit import StaticSite
+    import http.server, threading, json as _j
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            b = _j.dumps({"response": "OK", "eval_count": 16, "eval_duration": 4_000_000_000}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    assert local_tokens_per_second(f"http://127.0.0.1:{srv.server_address[1]}/v1", "llama3.2:3b") == 4.0
+    srv.shutdown()

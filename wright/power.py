@@ -10,11 +10,22 @@ from contextlib import contextmanager
 from typing import Iterator
 
 
+def on_ac_power() -> bool:
+    """`pmset -g batt` names the power source on its first line ("Now drawing from 'AC Power'")."""
+    try:
+        out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return False
+    return "AC Power" in out.splitlines()[0] if out else False
+
+
 def assertion_command(pid: int | None = None) -> list[str] | None:
     pid = pid or os.getpid()
     if sys.platform == "darwin" and shutil.which("caffeinate"):
-        # -i: prevent idle sleep; -w: the assertion also ends if Wright itself dies.
-        return ["caffeinate", "-i", "-w", str(pid)]
+        # -i: prevent idle sleep. -s: prevent system sleep, which `man caffeinate` says "is valid only
+        # when system is running on AC power" (brief v3, section 1). -w: end with Wright itself.
+        flags = ["-i", "-s"] if on_ac_power() else ["-i"]
+        return ["caffeinate", *flags, "-w", str(pid)]
     if sys.platform.startswith("linux") and shutil.which("systemd-inhibit"):
         return ["systemd-inhibit", "--what=idle:sleep", "--who=wright", "--why=task running",
                 "sleep", "infinity"]

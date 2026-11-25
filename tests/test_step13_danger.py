@@ -149,3 +149,40 @@ def test_full_agent_reports_dangers_and_mitigations(tmp_path):
     assert rep["dangers"] and rep["dangers"][0]["rehearsal"] == "rehearsed"
     assert "Danger: systemctl restart nginx" in ev.of("report")[0]["text"]
     assert not ev.of("confirm_request")
+
+
+def test_brief_v3_confirm_list_c2_and_host_os():
+    sh = Tool("shell__run", "", {}, lambda a: None, source="mcp:shell", destructive=True)
+    cats = lambda cmd: [r.category for r in classify(ToolCall("shell__run", {"command": cmd}), sh, "/sb")]
+    assert "host_os" in cats("softwareupdate -i -a")                          # would wipe OCLP root patches
+    assert "host_os" in cats("sudo nvram boot-args='-v'")
+    assert "host_os" in cats("softwareupdate --schedule on")                  # never changes update settings
+    assert "account_security" in cats("sysadminctl -adminUser x -resetPasswordFor y")
+    assert "account_security" in cats("spctl --master-disable")
+    assert "credentials" in cats("security find-generic-password -s wifi -w")
+    assert "credentials" in cats("sshpass -p hunter2 ssh admin@router")
+    assert "permanent_deletion" in cats("rm -rf ~/.Trash/*")
+    assert "permanent_deletion" in cats("tmutil delete /Volumes/Backup/old")
+    assert cats("softwareupdate --list") == []                                # reading is fine
+    router = Tool("router__set_admin_password", "", {}, lambda a: None, source="mcp:router", destructive=True)
+    assert "credentials" in [r.category for r in classify(ToolCall("router__set_admin_password", {}), router, None)]
+    ha = Tool("homeassistant__delete_automation", "", {}, lambda a: None, source="mcp:homeassistant", destructive=True)
+    assert "permanent_deletion" in [r.category for r in classify(ToolCall(ha.name, {}), ha, None)]
+
+
+def test_wright_never_types_your_password_even_if_confirmed(tmp_path):
+    fill = Tool("browser__fill", "fill", obj({"selector": {"type": "string"}, "text": {"type": "string"}}),
+                lambda a: ToolResult("filled"), source="mcp:browser", open_world=True)
+    asked = []
+    holder = {}
+    reg = ToolRegistry()
+    reg.register(fill)
+    ev = EventBus()
+    task = Task(goal="g", workdir=tmp_path)
+    Harness(ScriptedModel([call("browser__fill", selector="input[type=password]", text="hunter2"),
+                           call("browser__fill", selector="#username", text="sam"), say("ok")]),
+            reg, ev, gates=[DangerGate(lambda *a: asked.append(a) or True, ev)]).run(task)
+    blocked = ev.of("blocked")
+    assert len(blocked) == 1 and "never types your passwords" in blocked[0]["reason"]
+    assert asked == []                                                        # not even offered for approval
+    assert task.state["checklist"]                                            # handed to the person instead

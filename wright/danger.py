@@ -20,7 +20,13 @@ from .tools import Tool, ToolResult, obj
 
 CONFIRM = {"money": "spending money", "hardware": "an irreversible hardware write",
            "outside_destructive": "a destructive action outside the sandbox with no tested restore",
-           "disclosure": "sending or publishing to other people"}
+           "disclosure": "sending or publishing to other people",
+           "credentials": "entering a password or other credential",
+           "account_security": "a change to account or security settings",
+           "permanent_deletion": "permanently deleting real data",
+           "host_os": "a change to this Mac's macOS, OCLP patches, or boot settings"}
+NEVER = {"password_typing": "Wright never types your passwords (C2). Enter it yourself; Wright continues once "
+                            "you have, or uses a token you stored with the key box."}
 
 RULES: list[tuple[str, str, re.Pattern]] = [
     ("irreducible", "hardware", re.compile(
@@ -38,6 +44,23 @@ RULES: list[tuple[str, str, re.Pattern]] = [
         r"(\brm\s+(-\w*[rR]\w*\s+)+|\bDROP\s+(TABLE|DATABASE|SCHEMA)\b|\bTRUNCATE\s+TABLE\b|"
         r"\bgit\s+(reset\s+--hard|clean\s+-\w*f)|\bkubectl\s+delete\b|\bdocker\s+(volume\s+)?rm\b|"
         r"\bsrm\b|\bshred\b)", re.I)),
+    # Brief v3 confirm list, C2 items and the host Mac's OS/boot chain (OCLP: macOS updates wipe root
+    # patches, including Wi-Fi; dortania.github.io/OpenCore-Legacy-Patcher, per the brief).
+    ("irreducible", "host_os", re.compile(
+        r"(\bsoftwareupdate\s+(-\w*i\w*\b|--install|--download|--schedule|-a\b|--all|--restart|--fetch-full-installer)|"
+        r"\bstartosinstall\b|OpenCore-Patcher|\bbless\b|\bnvram\s+(-[dc]\b|\S+=)|/Volumes/EFI\b|"
+        r"\bdiskutil\s+mount\s+\S*(EFI|s1)\b|\bkmutil\b|com\.apple\.SoftwareUpdate|\bcsrutil\b)", re.I)),
+    ("irreducible", "account_security", re.compile(
+        r"(\bdscl\s+\S+\s+-(create|passwd|change|delete|append)\b|\bsysadminctl\b|\bpwpolicy\b|\bfdesetup\b|"
+        r"\bspctl\s+--(master-disable|global-disable|disable)|\bsecurity\s+set-keychain-settings|"
+        r"\btccutil\s+reset|\bsystemsetup\s+-set(remotelogin|remoteappleevents)|com\.apple\.screensaver\s+askForPassword|"
+        r"\bsocketfilterfw\s+--set(globalstate|stealthmode)\s+off)", re.I)),
+    ("irreducible", "credentials", re.compile(
+        r"(\bsshpass\b|\bsudo\s+-S\b|\bsecurity\s+(add|find|delete)-(generic|internet)-password\b|"
+        r"--password[=\s]\S|\bhtpasswd\b|\bexpect\b.*passw)", re.I)),
+    ("irreducible", "permanent_deletion", re.compile(
+        r"(\brm\s+-\w*P|\.Trash\b.*\brm\b|\brm\b.*\.Trash\b|\btmutil\s+delete|empty\s+(the\s+)?trash|"
+        r"\bshred\b|\bsrm\b)", re.I)),
     ("risky", "service", re.compile(
         r"(\b(ifconfig|networksetup|nmcli|iptables|ip6tables|nft|pfctl|ufw|scutil)\b|\bip\s+(link|addr|route)\b|"
         r"\buci\s+(set|commit|delete|add)|/etc/init\.d/\S+\s+(restart|stop|reload)|"
@@ -49,6 +72,10 @@ RULES: list[tuple[str, str, re.Pattern]] = [
 ]
 NAME_RULES: list[tuple[str, str, re.Pattern]] = [
     ("irreducible", "money", re.compile(r"(purchase|checkout|pay(ment)?|order|buy|subscribe)", re.I)),
+    ("irreducible", "credentials", re.compile(r"(password|passwd|credential|login|sign_?in|token)", re.I)),
+    ("irreducible", "account_security", re.compile(r"(account|user|2fa|mfa|totp|security|firewall|permission|"
+                                                   r"admin|ssh_?key|certificate|vpn)", re.I)),
+    ("irreducible", "permanent_deletion", re.compile(r"(delete|remove|purge|destroy|factory_?reset)", re.I)),
     ("irreducible", "disclosure", re.compile(r"(send|post|publish|email|message|tweet|share|notify)", re.I)),
     ("irreducible", "hardware", re.compile(r"(flash|firmware|format|erase|wipe)", re.I)),
 ]
@@ -61,8 +88,13 @@ class Risk:
     reason: str
 
 
+PASSWORD_FIELD = re.compile(r"(passw|pwd|passcode|\bpin\b|secret|otp|2fa|mfa|type\s*=\s*['\"]?password)", re.I)
+
+
 def classify(call: ToolCall, tool: Tool | None, sandbox_root: str | None) -> list[Risk]:
     risks: list[Risk] = []
+    if call.name.endswith(("__fill", "__type")) and PASSWORD_FIELD.search(str(call.args.get("selector", ""))):
+        return [Risk("never", "password_typing", f"{call.name} into {call.args.get('selector')!r}")]
     text = " ".join(str(call.args.get(k, "")) for k in ("command", "code"))
     for sev, cat, rx in RULES:
         m = rx.search(text)
@@ -80,7 +112,7 @@ def classify(call: ToolCall, tool: Tool | None, sandbox_root: str | None) -> lis
     if tool is not None and tool.source.startswith("mcp:") and tool.source not in (
             "mcp:shell", "mcp:fs", "mcp:code", "mcp:web", "mcp:image", "mcp:browser"):
         local = call.name.split("__", 1)[-1]
-        for sev, cat, rx in NAME_RULES:
+        for sev, cat, rx in (NAME_RULES if not tool.read_only else []):   # reading is never a confirm
             if rx.search(local):
                 risks.append(Risk(sev, cat, f"tool {call.name} looks like {CONFIRM[cat]}"))
         if tool.destructive and not tool.read_only and not risks:
@@ -104,6 +136,10 @@ class DangerGate:
         risks = classify(call, tool, task.state.get("sandbox_root"))
         if not risks:
             return ALLOW
+        never = [r for r in risks if r.severity == "never"]
+        if never:
+            task.state.setdefault("checklist", []).append(NEVER[never[0].category])
+            return Verdict(False, NEVER[never[0].category])
         cover = self._premortem_for(task, call)
         irreducible = [r for r in risks if r.severity == "irreducible"]
         destructive = [r for r in risks if r.severity == "destructive"]

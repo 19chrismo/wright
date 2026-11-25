@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import platform
 import shutil
 import sys
@@ -54,6 +55,13 @@ def run(config: Config | None = None, fix_routes: bool = True, out: Any = print)
         out(f"  ✗ {msg}\n      fix: {fix}")
 
     out(f"Wright doctor — {platform.platform()} · Python {sys.version.split()[0]} · home {cfg.paths.home}")
+    facts = machine_facts()
+    out("This machine")
+    for k, label in (("model", "model"), ("arch", "architecture"), ("macos", "macOS"), ("opencore", "OpenCore"),
+                     ("oclp", "OCLP"), ("memory_gb", "memory (GB)"), ("free_memory_gb", "free memory (GB)"),
+                     ("ac_power", "on AC power"), ("sleep_assertion", "can keep the Mac awake")):
+        if k in facts:
+            out(f"  · {label}: {facts[k]}")
     out("Core")
     if sys.version_info < (3, 11):
         bad("Python is older than 3.11", "install Python 3.12 (brew install python@3.12) and re-run install.sh")
@@ -84,6 +92,11 @@ def run(config: Config | None = None, fix_routes: bool = True, out: Any = print)
             want = [m.split(":", 1)[1] for ms in cfg.data["pool"]["routes"].values() for m in ms if m.startswith("ollama:")]
             missing = [w for w in sorted(set(want)) if w not in have and f"{w}:latest" not in have]
             ok(f"{lane.id}: Ollama running with {len(have)} model(s)")
+            route_model = next((w for w in want if w in have or f"{w}:latest" in have), None)
+            if route_model:
+                tps = local_tokens_per_second(lane.base_url, route_model)
+                out(f"  · {lane.id}: {route_model} generates {tps} tokens/s" if tps else
+                    f"  · {lane.id}: couldn't measure {route_model}'s speed")
             for m in missing:
                 bad(f"{lane.id}: route model {m} is not pulled", f"ollama pull {m}   (or change pool.routes in config.json)")
             continue
@@ -151,3 +164,55 @@ def _fix_gemini_route(cfg: Config, ids: list[str], out: Any) -> None:
         routes["auto"] = new_auto
         routes["fast"] = [m for m in (flash,) if m] + local
         out(f"  ✓ model route set from the live model list: {new_auto}")
+
+
+OPENCORE_GUID = "4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102"   # OpenCore's NVRAM vendor GUID [INFERRED]
+
+
+def machine_facts(run: Any = None) -> dict[str, Any]:
+    """Read the platform facts the brief's section 1 table depends on, from the system itself."""
+    import platform as _pf
+    import re as _re
+    import subprocess as _sp
+
+    def sh(*argv: str) -> str:
+        try:
+            p = (run or _sp.run)(list(argv), capture_output=True, text=True, timeout=10)
+            return (p.stdout or "").strip() if p.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    facts: dict[str, Any] = {"arch": _pf.machine(), "system": sys.platform}
+    if sys.platform == "darwin":
+        facts["model"] = sh("sysctl", "-n", "hw.model")
+        facts["macos"] = f"{sh('sw_vers', '-productVersion')} ({sh('sw_vers', '-buildVersion')})"
+        oc = sh("nvram", f"{OPENCORE_GUID}:opencore-version")
+        facts["opencore"] = oc.split("\t", 1)[-1] if oc else "not detected"
+        oclp = sh("nvram", f"{OPENCORE_GUID}:OCLP-Version")
+        facts["oclp"] = oclp.split("\t", 1)[-1] if oclp else "not detected"
+        total = sh("sysctl", "-n", "hw.memsize")
+        facts["memory_gb"] = round(int(total) / 1024 ** 3, 1) if total.isdigit() else None
+        vm = sh("vm_stat")
+        page = int(_re.search(r"page size of (\d+)", vm).group(1)) if "page size of" in vm else 4096
+        free = sum(int(m.group(1)) for m in _re.finditer(r"Pages (?:free|inactive|speculative):\s+(\d+)", vm))
+        facts["free_memory_gb"] = round(free * page / 1024 ** 3, 1) if vm else None
+        batt = sh("pmset", "-g", "batt")
+        facts["ac_power"] = bool(batt) and "AC Power" in batt.splitlines()[0]
+        facts["sleep_assertion"] = bool(shutil.which("caffeinate"))
+    else:
+        try:
+            facts["memory_gb"] = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024 ** 3, 1)
+            facts["free_memory_gb"] = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_AVPHYS_PAGES") / 1024 ** 3, 1)
+        except (ValueError, OSError):
+            pass
+    return facts
+
+
+def local_tokens_per_second(base: str, model: str, timeout: float = 120) -> float | None:
+    """Measure the local model's generation speed with a tiny prompt (Ollama /api/generate)."""
+    code, data = _post(base.rsplit("/v1", 1)[0] + "/api/generate",
+                       {"model": model, "prompt": "Reply with the word OK.", "stream": False,
+                        "options": {"num_predict": 16}}, {}, timeout=timeout)
+    if code != 200 or not isinstance(data, dict) or not data.get("eval_duration"):
+        return None
+    return round(data.get("eval_count", 0) / (data["eval_duration"] / 1e9), 2)
