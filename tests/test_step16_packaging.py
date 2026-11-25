@@ -121,6 +121,11 @@ def test_one_command_install_and_run_command(tmp_path):
     home.mkdir()
     env = {"HOME": str(home), "WRIGHT_HOME": str(home / ".wright"), "SHELL": "/bin/zsh",
            "PATH": "/usr/local/bin:/usr/bin:/bin", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+    # keep the machine's own network settings (proxy and CA bundle), e.g. in the build container
+    env.update({k: v for k, v in os.environ.items()
+                if k.upper() in ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                                 "REQUESTS_CA_BUNDLE", "PIP_CERT", "PIP_INDEX_URL", "UV_INDEX_URL",
+                                 "UV_DEFAULT_INDEX") or k.startswith("UV_SYSTEM_CERTS")})
     p = subprocess.run(["sh", str(ROOT / "install.sh"), "--no-browser"], env={**env, "WRIGHT_NO_LAUNCH": "1"}, capture_output=True, text=True,
                        timeout=900)
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-2000:]
@@ -146,3 +151,24 @@ def test_app_opened_from_finder_still_finds_ollama_and_homebrew(tmp_path, monkey
     import shutil
     assert shutil.which("ollama") == str(fake / "ollama")
     assert config.ensure_path() == []                                   # idempotent
+
+
+def test_two_starts_cannot_both_run(tmp_path):
+    from wright.app import acquire_instance_lock
+    first = acquire_instance_lock(tmp_path)
+    assert first is not None
+    assert acquire_instance_lock(tmp_path) is None                       # second start backs off
+    first.close()                                                        # first one exits
+    again = acquire_instance_lock(tmp_path)
+    assert again is not None
+    again.close()
+
+
+def test_two_update_checks_cannot_run_at_once(tmp_path):
+    import fcntl
+    from wright.updater import Updater
+    u = Updater(tmp_path, repo=tmp_path / "no-repo")
+    with open(tmp_path / "update.lock", "a+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert u.apply()["status"] == "busy"
+    assert u.apply()["status"] == "unavailable"                          # lock free again

@@ -83,7 +83,7 @@ def step2(verbose: bool = True) -> dict:
         lanes=[Lane("gemini-a", "gemini", ["gemini-*"], gemini.url, "gemini_a"),
                Lane("gemini-b", "gemini", ["gemini-*"], gemini.url, "gemini_b"),
                Lane("ollama", "ollama", ["ollama:*"], ollama.url, local=True)],
-        routes={"auto": ["gemini-2.5-flash", "ollama:qwen2.5vl:7b"]},
+        routes={"auto": ["gemini-2.5-flash", "ollama:qwen2.5:3b"]},
         key_lookup=keys.get, on_event=lambda e: ev.emit(e.pop("kind"), **e))
     server = PoolServer(pool, port=0).start()
     reg = ToolRegistry()

@@ -71,6 +71,17 @@ class Updater:
                 "changes": changes}
 
     def apply(self) -> dict:
+        """One updater at a time (an exclusive lock), so two checks never share a staging folder."""
+        import fcntl
+        self.home.mkdir(parents=True, exist_ok=True)
+        with open(self.home / "update.lock", "a+") as lf:
+            try:
+                fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return {"status": "busy", "message": "An update check is already running."}
+            return self._apply()
+
+    def _apply(self) -> dict:
         try:
             info = self.check()
         except Exception as e:
@@ -106,10 +117,19 @@ class Updater:
                           "tests": tail})
             self._emit("update", status="held_back", message=msg)
             return {"status": "held_back", "message": msg, "tests": tail}
-        old_pyproject = (self.repo / "pyproject.toml").read_text() if (self.repo / "pyproject.toml").exists() else ""
+        def deps() -> str:
+            return "".join((self.repo / f).read_text() for f in ("pyproject.toml", "uv.lock") if (self.repo / f).exists())
+        before = deps()
         _git(self.repo, "merge", "-q", "--ff-only", f"origin/{self.branch}")
-        if (self.repo / "pyproject.toml").exists() and (self.repo / "pyproject.toml").read_text() != old_pyproject:
-            self.runner([self.python, "-m", "pip", "install", "-q", "-e", str(self.repo)], capture_output=True, text=True)
+        if deps() != before:
+            uv = self.home / "bootstrap" / "bin" / "uv"
+            if uv.exists() and (self.repo / "uv.lock").exists():
+                env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(Path(self.python).resolve().parents[1])}
+                self.runner([str(uv), "sync", "--quiet", "--frozen", "--project", str(self.repo), "--extra", "test",
+                             "--extra", "browser"], capture_output=True, text=True, env=env)
+            else:
+                self.runner([self.python, "-m", "pip", "install", "-q", "--prefer-binary", "-e", str(self.repo)],
+                            capture_output=True, text=True)
         self._record({"t": time.time(), "status": "updated", "from": info["head"], "to": info["remote"],
                       "changes": info["changes"][:20]})
         msg = (f"Updated itself with {info['behind']} improvement(s) after all tests passed. "

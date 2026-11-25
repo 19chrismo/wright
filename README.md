@@ -17,12 +17,15 @@ git clone https://github.com/19chrismo/wright ~/wright-app && ~/wright-app/insta
 
 The installer:
 
-- finds or installs Python 3.12 (Homebrew or uv);
-- creates `~/.wright/venv`;
-- installs Wright and its tool servers;
-- links `wright` into `~/.local/bin`;
-- adds **Wright.app** to `~/Applications`, which you can drag to the Dock;
-- runs a self-test.
+- needs no admin password and no Homebrew; on a Mac it only needs Apple's
+  Command Line Tools (for `python3` and `git`);
+- gets `uv` from PyPI, pinned to one release and refused unless its SHA-256
+  matches, and never pipes a downloaded script into a shell;
+- installs Python 3.12 and exactly the package versions in `uv.lock`, every
+  one hash-checked and prebuilt for Intel Macs, Apple-silicon Macs and Linux,
+  so nothing needs compiling;
+- creates `~/.wright/venv`, links `wright` into `~/.local/bin`, adds
+  **Wright.app** to `~/Applications`, runs a self-test, and opens Wright.
 
 ## Run
 

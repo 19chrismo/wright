@@ -181,15 +181,36 @@ def _running_instance(lock: Path) -> str | None:
     return info["url"]
 
 
+def acquire_instance_lock(home: Path) -> Any:
+    """Atomic single-instance guard: an exclusive flock held for the life of the process (released by
+    the OS if it dies, and across exec because Python opens files close-on-exec). Returns the open
+    lock file, or None if another Wright holds it."""
+    import fcntl
+    home.mkdir(parents=True, exist_ok=True)
+    f = open(home / "app.lock", "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def run_app(window: bool = True) -> int:
     import json
     cfg = Config.load()
     lock = cfg.paths.home / "app.json"
-    url = _running_instance(lock)
-    if url:
-        if window:
+    holder = acquire_instance_lock(cfg.paths.home)
+    if holder is None:                                     # another Wright is running or starting
+        url = None
+        for _ in range(60):                                # give a starting instance time to publish its URL
+            url = _running_instance(lock)
+            if url:
+                break
+            time.sleep(0.5)
+        if url and window:
             open_window(url, cfg.paths.home / "window-profile")
-        print(f"Wright is already running: {url}")
+        print(f"Wright is already running{': ' + url if url else ''}")
         return 0
     token = os.environ.pop("WRIGHT_TOKEN", None)            # set when restarting in place
     port = os.environ.pop("WRIGHT_PORT", None)
