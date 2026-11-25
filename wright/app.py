@@ -45,7 +45,8 @@ def build_pool(config: Config, events: EventBus) -> tuple[PoolServer, Model]:
     pool = Pool(lanes_from_config(pc["lanes"]), pc["routes"], key_lookup=keys.get,
                 quota_groups=pc.get("quota_groups"), daily_reset=pc.get("daily_reset"),
                 max_wait=pc.get("max_wait_seconds", 120),
-                on_event=lambda e: events.emit(e.pop("kind"), **e), local_only=config.data.get("local_only", False))
+                on_event=lambda e: events.emit(e.pop("kind"), **e), local_only=config.data.get("local_only", False),
+                usage_file=config.paths.home / "usage.json")
     server = PoolServer(pool, pc.get("host", "127.0.0.1"), free_port(pc.get("port", 8765))).start()
     return server, OpenAICompatModel(server.url, config.data["harness"]["model"], api_key=server.token)
 
@@ -85,6 +86,10 @@ class App:
                            port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
                            control=self.control, force_ready=injected)
         self.control.on_ready = self.ui.resume_pending
+        if self.pool_server:                                   # remember which request each key served
+            pool = self.pool_server.pool
+            self.events.subscribe(lambda e: pool.annotate(e["lane"], self.agent.current.goal)
+                                  if e["kind"] == "lane" and self.agent.current else None)
         from .updater import Updater
         self.updater = Updater(self.config.paths.home, events=self.events)
         self.control.updater = self.updater

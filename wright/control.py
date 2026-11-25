@@ -250,6 +250,8 @@ class Control:
             out.append({"id": l["id"], "provider": l["provider"], "owner": l.get("owner", ""),
                         "local": bool(l.get("local")), "daily_cap": l.get("daily_cap"),
                         "used_today": s.get("used_today", 0), "cooling": s.get("cooling", {}),
+                        "total": s.get("total", 0), "last_used": s.get("last_used", 0),
+                        "last_model": s.get("last_model", ""), "last_task": s.get("last_task", ""),
                         "has_key": bool(l.get("key_ref") and self.keys.get(l["key_ref"])) if not l.get("local") else None})
         self.events.emit("keys", keys=out)
         return out

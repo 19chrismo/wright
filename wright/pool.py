@@ -16,6 +16,7 @@ import datetime as dt
 import fnmatch
 import ipaddress
 import json
+import os
 import re
 import secrets as pysecrets
 import threading
@@ -24,6 +25,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -71,6 +73,9 @@ class LaneStats:
     disabled: str | None = None
     day: str = ""
     day_counts: dict[str, int] = field(default_factory=dict)
+    total: int = 0              # all-time successful requests (persisted)
+    last_model: str = ""
+    last_task: str = ""         # the request it last served (shown in "show keys")
 
 
 class Pool:
@@ -80,7 +85,7 @@ class Pool:
                  daily_reset: dict[str, str] | None = None, max_wait: float = 120,
                  clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
                  timeout: float = 600, on_event: Callable[[dict], None] | None = None,
-                 local_only: bool = False):
+                 local_only: bool = False, usage_file: Path | None = None):
         self.lanes = lanes
         self.routes = routes
         self.key_lookup = key_lookup
@@ -95,6 +100,50 @@ class Pool:
         self.stats: dict[str, LaneStats] = {l.id: LaneStats() for l in lanes}
         self.cooldown: dict[tuple[str, str], float] = {}   # (lane, quota group) -> until
         self.lock = threading.Lock()
+        self.usage_file = usage_file
+        self._saved: dict[str, dict] = {}
+        self._load_usage()
+
+    # ---------------------------------------------------------------- usage survives restarts
+    # (so "show keys" can say where each key was used, and daily shares hold across restarts)
+    PERSIST = ("day", "day_counts", "total", "last_used", "last_model", "last_task")
+
+    def _load_usage(self) -> None:
+        if not self.usage_file or not self.usage_file.exists():
+            return
+        try:
+            self._saved = json.loads(self.usage_file.read_text()).get("lanes", {})
+        except (json.JSONDecodeError, OSError):
+            self._saved = {}
+        for lane_id, st in self.stats.items():
+            self._restore(lane_id, st)
+
+    def _restore(self, lane_id: str, st: LaneStats) -> None:
+        saved = self._saved.get(lane_id)
+        if not saved:
+            return
+        for k in self.PERSIST:
+            if k in saved:
+                setattr(st, k, saved[k])
+        if st.day != self._today():
+            st.day, st.day_counts = self._today(), {}
+
+    def _save_usage(self) -> None:
+        if not self.usage_file:
+            return
+        for lane_id, st in self.stats.items():
+            self._saved[lane_id] = {k: getattr(st, k) for k in self.PERSIST}
+        self.usage_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.usage_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"lanes": self._saved}, indent=1))
+        os.replace(tmp, self.usage_file)
+
+    def annotate(self, lane_id: str, task: str) -> None:
+        with self.lock:
+            st = self.stats.get(lane_id)
+            if st is not None:
+                st.last_task = task[:120]
+                self._save_usage()
 
     # ---------------------------------------------------------------- live changes (from the window)
     def add_lane(self, lane: Lane) -> None:
@@ -103,6 +152,7 @@ class Pool:
             local = [l for l in self.lanes if l.local]
             self.lanes = [l for l in self.lanes if not l.local] + [lane] + local
             self.stats[lane.id] = LaneStats()
+            self._restore(lane.id, self.stats[lane.id])
 
     def remove_lane(self, lane_id: str) -> None:
         with self.lock:
@@ -233,8 +283,11 @@ class Pool:
                 if status == 200 and data.get("choices"):
                     with self.lock:
                         st.ok += 1
+                        st.total += 1
+                        st.last_model = model
                         st.day_counts[model] = st.day_counts.get(model, 0) + 1
                         st.day_counts["__total__"] = st.day_counts.get("__total__", 0) + 1
+                        self._save_usage()
                     degraded = model != first_choice
                     self.on_event({"kind": "lane", "lane": lane.id, "model": model,
                                    "degraded": degraded})

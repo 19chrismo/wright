@@ -189,3 +189,23 @@ def test_everything_from_the_window(tmp_path):
     finally:
         app.stop(); up.stop()
     assert "AIzaSAM" not in json.dumps(app.events.history)
+
+
+def test_show_keys_says_where_each_key_was_used_and_survives_restart(tmp_path):
+    from wright.pool import Lane
+    up = MockUpstream(ScriptedModel([say("ok")], loop_last=True), keys={"KEY-A-1111111111": {"ok_for": None}})
+    usage = tmp_path / "usage.json"
+    mk = lambda: Pool([Lane("gemini-sam", "gemini", ["gemini-*"], up.url, "a", daily_cap=2, owner="Sam")],
+                      {"auto": ["gemini-2.5-flash"]}, key_lookup={"a": "KEY-A-1111111111"}.get, usage_file=usage,
+                      max_wait=0)
+    pool = mk()
+    body = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+    assert pool.complete(body)[0] == 200
+    pool.annotate("gemini-sam", "retitle the family website")
+    assert pool.complete(body)[0] == 200
+    restarted = mk()                                              # Wright closed and reopened
+    assert restarted.complete(body)[0] == 503                     # Sam's daily share of 2 still holds
+    st = {l["id"]: l for l in restarted.status()["lanes"]}["gemini-sam"]
+    assert st["total"] == 2 and st["used_today"] == 2 and st["last_model"] == "gemini-2.5-flash"
+    assert st["last_task"] == "retitle the family website" and st["last_used"] > 0
+    up.stop()

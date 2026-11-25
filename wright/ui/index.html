@@ -177,8 +177,10 @@ Object.assign(render,{
  key_added(e){note(e.message)}, key_removed(e){note(e.message,"neutral")}, local_only(e){note(e.message,"neutral")},
  undo(e){note(e.message,"neutral")}, connected(e){note(e.message)}, notice(e){note(e.text,"neutral")},
  setup_progress(e){note(e.text,e.done?(e.ok?"":"bad"):"neutral")},
- keys(e){add(div("card",`<h3>Keys in use</h3><table class="keys"><tr><th>Key</th><th>Whose</th><th>Today</th><th>Status</th></tr>`+
-   (e.keys||[]).map(k=>`<tr><td>${esc(k.id)}</td><td>${esc(k.owner||(k.local?"this Mac":"you"))}</td><td>${k.local?"—":(k.used_today+(k.daily_cap?" / "+k.daily_cap:""))}</td>
+ keys(e){const ago=t=>{if(!t)return"never";const s=Date.now()/1000-t;return s<90?"just now":s<5400?Math.round(s/60)+" min ago":s<129600?Math.round(s/3600)+" h ago":Math.round(s/86400)+" days ago"};
+   add(div("card",`<h3>Keys in use</h3><table class="keys"><tr><th>Key</th><th>Whose</th><th>Today</th><th>Total</th><th>Last used</th><th>Status</th></tr>`+
+   (e.keys||[]).map(k=>`<tr><td>${esc(k.id)}</td><td>${esc(k.owner||(k.local?"this Mac":"you"))}</td><td>${k.used_today+(k.daily_cap?" / "+k.daily_cap:"")}</td>
+   <td>${k.total||0}</td><td>${esc(ago(k.last_used))}${k.last_model?`<div class="small">${esc(k.last_model)}${k.last_task?" — “"+esc(k.last_task)+"”":""}</div>`:""}</td>
    <td>${k.local?"local model":(k.has_key?(Object.keys(k.cooling||{}).length?"resting":"ready"):"missing key")}</td></tr>`).join("")+`</table>
    <div class="small">Say “remove Sam's key” to take one out.</div>`,"keys"))},
 });
