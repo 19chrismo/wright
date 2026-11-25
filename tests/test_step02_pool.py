@@ -49,7 +49,7 @@ def test_daily_quota_cools_until_next_reset():
     until = pool.cooldown[("g", "gemini-2.5-flash")]
     assert abs(until - pool.next_reset()) < 2              # cooled until the configured reset
     assert status == 503 and data["error"]["type"] == "wright_setup_defect"
-    assert "ollama" in data["error"]["message"].lower()     # one setup defect with the fix
+    assert "install the free local model" in data["error"]["message"]   # one setup defect with the fix
     up.stop()
 
 

@@ -243,3 +243,63 @@ def test_show_keys_says_where_each_key_was_used_and_survives_restart(tmp_path):
     assert st["total"] == 2 and st["used_today"] == 2 and st["last_model"] == "gemini-2.5-flash"
     assert st["last_task"] == "retitle the family website" and st["last_used"] > 0
     up.stop()
+
+
+def test_hi_gets_a_reply_not_a_job():
+    for t in ("hi", "Hello!", "hey wright", "thanks", "you there?"):
+        assert route(t)["action"] == "greet"
+    assert route("hi, please build me a page for the family photos") is None
+
+
+def test_check_setup_tests_every_key_in_plain_words(ctl):
+    c, ev, up, pool = ctl
+    c.add_key("gemini", "AIzaSAM-valid-key-0001", owner="Sam")
+    c.cfg.data["pool"]["lanes"].insert(0, {"id": "gemini-old", "provider": "gemini", "models": ["gemini-*"],
+                                           "key_ref": "gemini_old", "owner": "Alex"})
+    c.keys.set("gemini_old", "AIzaREVOKED-key-0000")
+    c.cfg.data["pool"]["lanes"].insert(0, {"id": "gemini-nokey", "provider": "gemini", "models": ["gemini-*"],
+                                           "key_ref": "gemini_nokey"})
+    st = c.show_setup(probe=True)
+    by = {k["id"]: k for k in st["keys"]}
+    assert by["gemini-sam"]["ok"] and by["gemini-sam"]["detail"] == "key valid"
+    assert not by["gemini-old"]["ok"] and "rejected" in by["gemini-old"]["detail"]
+    assert by["gemini-nokey"]["detail"] == "no key stored"
+    assert "AIza" not in json.dumps(ev.history)
+
+
+def test_no_model_message_says_what_each_key_said_and_names_the_real_local_model():
+    from wright.pool import Lane
+    up = MockUpstream(ScriptedModel([say("x")], loop_last=True),
+                      keys={"K1-xxxxxxxxxxxx": {"ok_for": 0, "then": "429", "retry": 600},
+                            "K2-xxxxxxxxxxxx": {"ok_for": 0, "then": "429-daily"}})
+    pool = Pool([Lane("gemini-1", "gemini", ["gemini-*"], up.url, "k1", owner="Sam"),
+                 Lane("gemini-2", "gemini", ["gemini-*"], up.url, "k2"),
+                 Lane("ollama", "ollama", ["ollama:*"], "http://127.0.0.1:9/v1", local=True)],
+                {"auto": ["gemini-2.5-flash", "ollama:llama3.2:3b"]},
+                key_lookup={"k1": "K1-xxxxxxxxxxxx", "k2": "K2-xxxxxxxxxxxx"}.get, max_wait=0)
+    code, data, _ = pool.complete({"model": "auto", "messages": [{"role": "user", "content": "x"}]})
+    msg = data["error"]["message"]
+    assert code == 503 and "gemini-1 (Sam): hit its usage limit" in msg and "usable again in 10 min" in msg
+    assert "gemini-2: hit its usage limit" in msg and "ollama: not reachable — Ollama isn't running" in msg
+    assert "llama3.2:3b" in msg and "qwen2.5vl" not in msg and "wright doctor" not in msg
+    up.stop()
+
+
+def test_gemini_gets_tool_schemas_it_accepts():
+    from wright.pool import Lane, gemini_schema
+    s = gemini_schema({"type": "object", "$schema": "x", "additionalProperties": False, "title": "T",
+                       "properties": {"content": {"type": ["string", "object"], "default": None},
+                                      "n": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                                      "tags": {"type": "array"}},
+                       "required": ["content", "missing"]})
+    assert s == {"type": "object", "properties": {"content": {"type": "string"}, "n": {"type": "integer"},
+                                                  "tags": {"type": "array", "items": {"type": "string"}}},
+                 "required": ["content"]}
+    up = MockUpstream(ScriptedModel([say("ok")], loop_last=True), keys={"K-xxxxxxxxxxxx": {"ok_for": None}})
+    pool = Pool([Lane("gemini-1", "gemini", ["gemini-*"], up.url, "k")], {"auto": ["gemini-2.5-flash"]},
+                key_lookup={"k": "K-xxxxxxxxxxxx"}.get)
+    tool = {"type": "function", "function": {"name": "self__propose", "description": "d",
+            "parameters": {"type": "object", "properties": {"content": {"type": ["string", "object"]}}}}}
+    assert pool.complete({"model": "auto", "messages": [], "tools": [tool]})[0] == 200
+    assert up.log[-1]["tools"][0]["function"]["parameters"]["properties"]["content"] == {"type": "string"}
+    up.stop()

@@ -63,6 +63,77 @@ class Lane:
         return model.split(":", 1)[1] if model.startswith(f"{self.provider}:") else model
 
 
+def _mins(seconds: float) -> str:
+    if seconds < 90:
+        return f"{max(1, round(seconds))} s"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} min"
+    return f"{round(seconds / 3600, 1)} h"
+
+
+def describe_error(lane: "Lane", model: str, status: int, data: Any) -> str:
+    """A provider refusal in plain words."""
+    err = data[0] if isinstance(data, list) and data else data
+    err = err.get("error", err) if isinstance(err, dict) else {}
+    msg = str(err.get("message") or err.get("status") or "")[:160]
+    m = model.split(":", 1)[1] if model.startswith("ollama:") else model
+    if status == 429:
+        return "hit its usage limit" + (f" ({msg})" if msg else "")
+    if status in (401, 403):
+        return "the service rejected the key"
+    if status == 404:
+        return (f"the model {m} isn't downloaded yet" if lane.local else f"the model {m} isn't available to this key")
+    if status == 400:
+        return f"the service refused the request ({msg or 'bad request'})"
+    if status == 599:
+        return "not reachable" + (" — Ollama isn't running" if lane.local else "")
+    return f"the AI service had a problem ({status}{': ' + msg if msg else ''})"
+
+
+GEMINI_KEYS = {"type", "description", "enum", "properties", "required", "items", "nullable", "format",
+               "minItems", "maxItems", "minimum", "maximum"}
+
+
+def gemini_schema(schema: Any) -> Any:
+    """Reduce a JSON Schema to the subset Gemini's function declarations accept: one type per field
+    (unions → first non-null type + nullable), no $schema/$defs/additionalProperties/title/default,
+    `required` limited to declared properties. [INFERRED from Gemini's documented OpenAPI subset;
+    a stricter schema only narrows what the model sends, and every tool still validates its args.]"""
+    if not isinstance(schema, dict):
+        return schema
+    if "anyOf" in schema and "type" not in schema:
+        first = next((x for x in schema["anyOf"] if isinstance(x, dict) and x.get("type") != "null"), {})
+        schema = {**first, **{k: v for k, v in schema.items() if k != "anyOf"}}
+    out: dict[str, Any] = {}
+    t = schema.get("type")
+    if isinstance(t, list):
+        non_null = [x for x in t if x != "null"]
+        out["type"] = non_null[0] if non_null else "string"
+        if "null" in t:
+            out["nullable"] = True
+    elif t:
+        out["type"] = t
+    for k in GEMINI_KEYS - {"type", "properties", "items", "required"}:
+        if k in schema:
+            out[k] = schema[k]
+    if out.get("format") not in (None, "enum", "date-time"):
+        out.pop("format")
+    if "properties" in schema and isinstance(schema["properties"], dict):
+        out["properties"] = {k: gemini_schema(v) for k, v in schema["properties"].items()}
+        if not out.get("type"):
+            out["type"] = "object"
+        req = [r for r in schema.get("required", []) if r in out["properties"]]
+        if req:
+            out["required"] = req
+    if "items" in schema:
+        out["items"] = gemini_schema(schema["items"])
+    if out.get("type") == "object" and "properties" not in out:
+        out["properties"] = {}
+    if out.get("type") == "array" and "items" not in out:
+        out["items"] = {"type": "string"}
+    return out
+
+
 @dataclass
 class LaneStats:
     requests: int = 0
@@ -73,6 +144,7 @@ class LaneStats:
     disabled: str | None = None
     day: str = ""
     day_counts: dict[str, int] = field(default_factory=dict)
+    last_error: str = ""        # the latest refusal, in plain words (shown by "check setup")
     total: int = 0              # all-time successful requests (persisted)
     last_model: str = ""
     last_task: str = ""         # the request it last served (shown in "show keys")
@@ -224,6 +296,10 @@ class Pool:
         payload = dict(body)
         payload["model"] = lane.upstream_model(model)
         payload["stream"] = False
+        if lane.provider == "gemini" and payload.get("tools"):
+            payload["tools"] = [{**t, "function": {**t["function"],
+                                                   "parameters": gemini_schema(t["function"].get("parameters") or {})}}
+                                for t in payload["tools"]]
         headers = {"Content-Type": "application/json"}
         if lane.key_ref:
             key = self.key_lookup(lane.key_ref)
@@ -293,6 +369,8 @@ class Pool:
                                    "degraded": degraded})
                     return 200, data, {"x-wright-lane": f"{lane.id}/{model}",
                                        "x-wright-degraded": "1" if degraded else "0"}
+                if status != 200:
+                    st.last_error = describe_error(lane, model, status, data)
                 if status == 429:
                     wait = self.retry_after(status, data, headers)
                     with self.lock:
@@ -332,29 +410,42 @@ class Pool:
             return 503, {"error": {"type": "wright_setup_defect", "message": self.setup_fix()}}, {}
 
     def setup_fix(self) -> str:
-        local = [l for l in self.lanes if l.local]
-        capped = [l.owner or l.id for l in self.lanes if l.daily_cap is not None
-                  and self.stats[l.id].day_counts.get("__total__", 0) >= l.daily_cap]
-        if capped and not local:
-            return (f"Today's agreed shares are used up on: {', '.join(capped)}. Add a local model so work "
-                    "continues (install Ollama, then `ollama pull qwen2.5:7b`), or raise a share with "
-                    "`wright keys remove` + `wright keys add ... --daily-cap N`.")
-        if not local:
-            return ("Every cloud lane is cooling down and no local lane is configured. Install "
-                    "Ollama (https://ollama.com), run `ollama pull qwen2.5vl:7b`, then `wright doctor`.")
-        bad = [l.id for l in local if self.stats[l.id].errors]
-        if bad:
-            return (f"Every cloud lane is cooling down and the local lane ({', '.join(bad)}) is not "
-                    "answering. Start Ollama (`ollama serve`) and make sure the model is pulled "
-                    "(`ollama pull qwen2.5vl:7b`), then `wright doctor`.")
-        return "No lane can serve this model route. Run `wright doctor` for the exact fix."
+        now = self.clock()
+        local_models = sorted({m.split(":", 1)[1] for ms in self.routes.values() for m in ms if m.startswith("ollama:")})
+        lines = []
+        for l in self.lanes:
+            st = self.stats[l.id]
+            name = l.id + (f" ({l.owner})" if l.owner else "")
+            cool = [u - now for (lid, _g), u in self.cooldown.items() if lid == l.id and u > now]
+            if st.disabled:
+                lines.append(f"{name}: the key was rejected — remove it and add it again.")
+            elif l.daily_cap is not None and st.day_counts.get("__total__", 0) >= l.daily_cap:
+                lines.append(f"{name}: today's agreed share ({l.daily_cap}) is used up.")
+            elif cool and not st.last_error.startswith(("not reachable", "the AI service had a problem")):
+                lines.append(f"{name}: {st.last_error or 'resting after a usage limit'} — usable again in "
+                             f"{_mins(max(cool))}.")
+            elif st.last_error:
+                lines.append(f"{name}: {st.last_error}")
+        has_local = any(l.local for l in self.lanes)
+        head = "No AI model could answer right now."
+        tail = []
+        if not has_local:
+            tail.append("Add the free local model so work never stops: type “install the free local model”.")
+        elif any(self.stats[l.id].last_error for l in self.lanes if l.local):
+            tail.append("For the local model: type “install the free local model” (it uses a model already on this "
+                        f"Mac if there is one{', otherwise downloads ' + local_models[0] if local_models else ''}). "
+                        "If a download is still running, wait for it to finish.")
+        if any(self.stats[l.id].disabled for l in self.lanes):
+            tail.append("For a rejected key: type “remove <name>'s key”, then “add <name>'s key” with a fresh one.")
+        tail.append("Type “check setup” to test every key again.")
+        return head + ("\n• " + "\n• ".join(lines) if lines else "") + "\n" + " ".join(tail)
 
     def status(self) -> dict:
         now = self.clock()
         with self.lock:
             return {"lanes": [{
                 "id": l.id, "provider": l.provider, "local": l.local, "models": l.models,
-                "owner": l.owner, "daily_cap": l.daily_cap,
+                "owner": l.owner, "daily_cap": l.daily_cap, "last_error": self.stats[l.id].last_error,
                 "used_today": self.stats[l.id].day_counts.get("__total__", 0)
                 if self.stats[l.id].day == self._today() else 0,
                 "has_key": bool(l.key_ref and self.key_lookup(l.key_ref)) if l.key_ref else None,

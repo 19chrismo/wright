@@ -68,7 +68,7 @@ class MockUpstream:
                 with outer.lock:
                     rule = outer.keys.get(key)
                     outer.log.append({"key": key, "model": body.get("model"), "t": time.time(),
-                                      "auth_header": auth})
+                                      "auth_header": auth, "tools": body.get("tools")})
                     if rule is None:
                         return self._send(401, {"error": {"message": "API key not valid"}})
                     served = outer.served.get(key, 0)

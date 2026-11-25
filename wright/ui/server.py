@@ -242,7 +242,9 @@ class UIServer:
                     if not body.get("_echoed"):
                         self.events.emit("user", text=text, images=[{"mime": i["mime"], "data": i["data"]}
                                                                     for i in images], target=target)
-                    agent.run(text, target=target, images=images)
+                    task = agent.run(text, target=target, images=images)
+                    if self.control is not None and getattr(task, "status", "") == "blocked":
+                        self.control.show_setup(probe=True)       # show exactly what needs fixing
             except Exception as e:
                 self.events.emit("error", detail=f"{type(e).__name__}: {e}")
             finally:

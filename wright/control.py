@@ -30,6 +30,8 @@ OLLAMA_MAC_ZIP = "https://ollama.com/download/Ollama-darwin.zip"   # [INFERRED];
 # ----------------------------------------------------------------------------- intent routing
 NAME = r"([A-Z][a-zA-Z\-]{1,20})"
 RULES: list[tuple[str, re.Pattern]] = [
+    ("greet", re.compile(r"^\s*(hi|hello|hey|hiya|yo|good (morning|afternoon|evening)|thanks|thank you|"
+                         r"ok|okay|you there\??|are you there\??)[\s!.?,]*(wright)?[\s!.?]*$", re.I)),
     ("status", re.compile(r"^\s*(/status|/setup|status|setup|check (the )?setup|is (it|everything) (set up|ready)\??|"
                           r"what('s| is) missing\??)\s*$", re.I)),
     ("keys", re.compile(r"^\s*(/keys|(show|list) (the |my |all )?keys|whose keys( are (in use|there))?\??)\s*$", re.I)),
@@ -177,8 +179,42 @@ class Control:
         ready = local_ok or (bool(cloud) and not self.cfg.data.get("local_only"))
         return {"ready": ready, "items": items}
 
-    def show_setup(self) -> dict:
+    def check_keys(self) -> list[dict]:
+        """Live check of every online key, in plain words (no generation quota is used)."""
+        status = {l["id"]: l for l in (self.pool.status()["lanes"] if self.pool is not None else [])}
+        out = []
+        for l in self.cfg.data["pool"]["lanes"]:
+            if l.get("local"):
+                continue
+            name = l["id"] + (f" ({l['owner']})" if l.get("owner") else "")
+            key = self.keys.get(l.get("key_ref", "")) if l.get("key_ref") else None
+            if not key:
+                out.append({"id": l["id"], "name": name, "ok": False, "detail": "no key stored"})
+                continue
+            base = (l.get("base_url") or self.cfg.data["pool"].get("provider_urls", {}).get(l["provider"])
+                    or PROVIDER_DEFAULTS.get(l["provider"], "")).rstrip("/")
+            code, _ = _http(base + "/models", {"Authorization": f"Bearer {key}"})
+            last = status.get(l["id"], {}).get("last_error", "")
+            cooling = status.get(l["id"], {}).get("cooling", {})
+            if code in (401, 403):
+                out.append({"id": l["id"], "name": name, "ok": False, "detail": "the service rejected this key"})
+            elif code == 0:
+                out.append({"id": l["id"], "name": name, "ok": False, "detail": "couldn't reach the service"})
+            elif cooling:
+                out.append({"id": l["id"], "name": name, "ok": False,
+                            "detail": f"valid, but resting after a usage limit ({last or 'limit reached'})"})
+            elif last:
+                out.append({"id": l["id"], "name": name, "ok": code == 200,
+                            "detail": f"key valid; last problem: {last}"})
+            else:
+                out.append({"id": l["id"], "name": name, "ok": code == 200,
+                            "detail": "key valid" if code == 200 else f"unexpected answer ({code})"})
+        return out
+
+    def show_setup(self, probe: bool = False) -> dict:
         st = self.setup_status()
+        if probe:
+            st["keys"] = self.check_keys()
         self.events.emit("setup", **st)
         return st
 
@@ -414,8 +450,17 @@ class Control:
     # ================================================================== dispatcher
     def handle(self, routed: dict) -> dict:
         a, args = routed["action"], routed.get("args", {})
+        if a == "greet":
+            st = self.setup_status()
+            if st["ready"]:
+                self.events.emit("notice", text="Hi! Tell me what you'd like done — for example “make a simple "
+                                                "web page for our family”, or paste a screenshot of something to fix.")
+            else:
+                self.events.emit("notice", text="Hi! Before I can do things, I need an AI model — see the setup card.")
+                self.show_setup(probe=True)
+            return {"ok": True}
         if a == "status":
-            return {"ok": True, **self.show_setup()}
+            return {"ok": True, **self.show_setup(probe=True)}
         if a == "keys":
             return {"ok": True, "keys": self.list_keys()}
         if a == "key_card":

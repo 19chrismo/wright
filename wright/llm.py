@@ -70,8 +70,14 @@ class OpenAICompatModel(Model):
                 data = json.loads(r.read())
                 lane = r.headers.get("x-wright-lane")
         except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")[:500]
-            raise ModelUnavailable(f"model endpoint returned {e.code}: {detail}") from None
+            raw = e.read().decode(errors="replace")
+            try:
+                err = json.loads(raw)
+                err = err[0] if isinstance(err, list) and err else err
+                detail = err.get("error", {}).get("message") or raw[:500]
+            except (json.JSONDecodeError, AttributeError):
+                detail = raw[:500]
+            raise ModelUnavailable(detail if e.code == 503 else f"model endpoint returned {e.code}: {detail}") from None
         except urllib.error.URLError as e:
             raise ModelUnavailable(f"model endpoint unreachable at {self.base_url}: {e.reason}") from None
         msg = data["choices"][0]["message"]

@@ -126,10 +126,12 @@ const render={
  audit(e){add(div("row",`audit @ step ${e.step}: invariants ${e.invariants_ok?"ok":"VIOLATED"} · ${(e.criteria||[]).map(c=>esc(c.name)+(c.ok?" ✓":" ✗")).join(", ")}`))},
  lane_cooldown(e){add(div("row",`model lane ${esc(e.lane)} cooling ${e.seconds}s — rerouted`))},
  power(e){$("#p-power").hidden=e.state!=="held"},
- setup_defect(e){add(div("card bad",`<h3>Setup needed</h3>${esc(e.detail)}<br>Run <code>wright doctor</code> for the exact fix.`))},
+ setup_defect(e){add(div("card bad",`<h3>No AI model could answer</h3><div style="white-space:pre-wrap">${esc(e.detail)}</div>`,"setup-defect"))},
+ pool_wait(e){note(`All keys are resting after usage limits — waiting ${Math.round(e.seconds)} s for one to free up…`,"neutral")},
  error(e){add(div("card bad",`<h3>Error</h3>${esc(e.detail)}`))},
  resumed(e){add(div("divider",`resumed task ${esc(e.task)} at ${esc(e.state)} (step ${e.steps})`))},
  report(e){const r=e.report||{};const c=r.calibration||{};
+   if(r.status==="blocked"){pill("#p-state","state <b>waiting for setup</b>","warn");return}
    pill("#p-cal",calText(c));
    pill("#p-state","state <b>"+esc(r.status)+"</b>",r.status==="done"?"ok":"bad");
    const g=(r.grounding||[]).map(x=>`<li><span class="tag ${esc(x.tag)}">[${esc(x.tag)}]</span>${esc(x.statement)} <span class="lane">${x.confidence}${x.grade?" · "+esc(x.grade):""}</span></li>`).join("");
@@ -150,7 +152,9 @@ function note(text,cls){add(div("notice"+(cls?" "+cls:""),esc(text),"notice"))}
 Object.assign(render,{
  setup(e){document.querySelectorAll("[data-testid=setup]").forEach(x=>x.remove());const c=div("card setup",`<h3>${e.ready?"Ready":"Setup — everything happens here"}</h3>`+(e.items||[]).map(i=>
    `<div class="item"><span class="mark ${i.ok?"y":"n"}">${i.ok?"✓":"○"}</span><div class="grow"><b>${esc(i.title)}</b><div class="detail">${esc(i.detail)}</div></div>`+
-   ((!i.ok||i.id==="privacy")?`<button data-act="${esc(i.action)}"${i.id!=="privacy"?' class="primary"':""}>${esc(i.label)}</button>`:"")+`</div>`).join(""),"setup");
+   ((!i.ok||i.id==="privacy")?`<button data-act="${esc(i.action)}"${i.id!=="privacy"?' class="primary"':""}>${esc(i.label)}</button>`:"")+`</div>`).join("")+
+   (e.keys&&e.keys.length?`<div class="item"><span class="mark"></span><div class="grow"><b>Each key, checked just now</b>`+
+     e.keys.map(k=>`<div class="detail"><span class="${k.ok?"y":"n"}">${k.ok?"✓":"✗"}</span> ${esc(k.name)}: ${esc(k.detail)}</div>`).join("")+`</div></div>`:""),"setup");
    c.querySelectorAll("button[data-act]").forEach(b=>b.onclick=()=>{b.disabled=true;post("/api/action",{action:b.dataset.act})});add(c)},
  key_card(e){const c=div("card",`<h3>Add an AI key</h3>
    <div class="form"><label>Service</label><select name="provider"><option value="gemini">Google Gemini</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
