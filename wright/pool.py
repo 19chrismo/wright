@@ -52,6 +52,7 @@ class Lane:
     daily_caps: dict[str, int] = field(default_factory=dict)   # model -> max requests per day
     daily_cap: int | None = None            # whole-lane requests per day (e.g. a family member's share)
     owner: str = ""                         # whose key/project this is; shown in status and reports
+    max_ctx: int = 8192                     # local lanes: largest context window to ask for (RAM on 8 GB)
 
     def __post_init__(self) -> None:
         self.base_url = (self.base_url or PROVIDER_DEFAULTS.get(self.provider, "")).rstrip("/")
@@ -88,6 +89,61 @@ def describe_error(lane: "Lane", model: str, status: int, data: Any) -> str:
     if status == 599:
         return "not reachable" + (" — Ollama isn't running" if lane.local else "")
     return f"the AI service had a problem ({status}{': ' + msg if msg else ''})"
+
+
+def _ema(old: float, new: float, a: float = 0.4) -> float:
+    return new if not old else old * (1 - a) + new * a
+
+
+def compact_text(text: str, limit: int = 160) -> str:
+    t = " ".join((text or "").split())
+    first = t.split(". ")[0]
+    return (first if len(first) <= limit else first[:limit - 1] + "…")
+
+
+def compact_schema(schema: Any) -> Any:
+    """Drop words a small local model doesn't need (descriptions, titles, defaults, examples)."""
+    if isinstance(schema, dict):
+        return {k: compact_schema(v) for k, v in schema.items()
+                if k not in ("description", "title", "default", "examples", "$schema", "additionalProperties")}
+    if isinstance(schema, list):
+        return [compact_schema(x) for x in schema]
+    return schema
+
+
+def to_ollama_messages(messages: list[dict]) -> list[dict]:
+    """OpenAI-style chat messages → Ollama /api/chat messages (images and tool calls included)."""
+    out = []
+    for m in messages:
+        role = m.get("role", "user")
+        c = m.get("content")
+        images: list[str] = []
+        if isinstance(c, list):
+            texts = []
+            for part in c:
+                if part.get("type") == "text":
+                    texts.append(part.get("text", ""))
+                elif part.get("type") == "image_url":
+                    url = (part.get("image_url") or {}).get("url", "")
+                    if url.startswith("data:") and "," in url:
+                        images.append(url.split(",", 1)[1])
+            c = "\n".join(texts)
+        msg: dict[str, Any] = {"role": role, "content": c or ""}
+        if images:
+            msg["images"] = images
+        if role == "assistant" and m.get("tool_calls"):
+            msg["tool_calls"] = []
+            for tc in m["tool_calls"]:
+                f = tc.get("function", {})
+                try:
+                    args = json.loads(f.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                msg["tool_calls"].append({"function": {"name": f.get("name", ""), "arguments": args}})
+        if role == "tool" and m.get("name"):
+            msg["tool_name"] = m["name"]
+        out.append(msg)
+    return out
 
 
 GEMINI_KEYS = {"type", "description", "enum", "properties", "required", "items", "nullable", "format",
@@ -145,6 +201,9 @@ class LaneStats:
     day: str = ""
     day_counts: dict[str, int] = field(default_factory=dict)
     last_error: str = ""        # the latest refusal, in plain words (shown by "check setup")
+    prefill_tps: float = 0.0    # measured prompt-reading speed (local lanes), tokens/s
+    gen_tps: float = 0.0        # measured writing speed, tokens/s
+    last_prompt_chars: int = 0  # size of the previous request (estimates how much Ollama can reuse)
     total: int = 0              # all-time successful requests (persisted)
     last_model: str = ""
     last_task: str = ""         # the request it last served (shown in "show keys")
@@ -173,12 +232,15 @@ class Pool:
         self.cooldown: dict[tuple[str, str], float] = {}   # (lane, quota group) -> until
         self.lock = threading.Lock()
         self.usage_file = usage_file
+        self.local_turn_budget = 900.0          # seconds one local call may take at the measured speed
+        self.local_silence_timeout = 300.0      # a streaming local call gives up only after this much silence
+        self._tool_union: dict[str, dict[str, dict]] = {}
         self._saved: dict[str, dict] = {}
         self._load_usage()
 
     # ---------------------------------------------------------------- usage survives restarts
     # (so "show keys" can say where each key was used, and daily shares hold across restarts)
-    PERSIST = ("day", "day_counts", "total", "last_used", "last_model", "last_task")
+    PERSIST = ("day", "day_counts", "total", "last_used", "last_model", "last_task", "prefill_tps", "gen_tps")
 
     def _load_usage(self) -> None:
         if not self.usage_file or not self.usage_file.exists():
@@ -263,6 +325,16 @@ class Pool:
             nxt += dt.timedelta(days=1)
         return nxt.timestamp()
 
+    def too_slow(self, lane: Lane, body: dict) -> float | None:
+        """Estimated seconds for this call on a local lane at its measured speed, if over budget."""
+        st = self.stats[lane.id]
+        if not lane.local or not st.prefill_tps or not st.gen_tps:
+            return None
+        chars = len(json.dumps(body.get("messages", []))) + len(json.dumps(body.get("tools", [])))
+        new_tokens = max(200, (chars - st.last_prompt_chars if chars > st.last_prompt_chars else chars) // 3)
+        est = new_tokens / st.prefill_tps + 200 / st.gen_tps     # a typical turn writes ~200 tokens
+        return est if est > self.local_turn_budget else None
+
     def _available(self, lane: Lane, model: str, now: float) -> bool:
         st = self.stats[lane.id]
         if st.disabled:
@@ -293,6 +365,10 @@ class Pool:
 
     # ---------------------------------------------------------------- upstream
     def _send(self, lane: Lane, model: str, body: dict) -> tuple[int, dict, dict[str, str]]:
+        if lane.provider == "ollama" and getattr(self.stats[lane.id], "native", True) is not False:
+            r = self._send_ollama_native(lane, model, body)
+            if r is not None:
+                return r
         payload = dict(body)
         payload["model"] = lane.upstream_model(model)
         payload["stream"] = False
@@ -320,6 +396,86 @@ class Pool:
             return e.code, data, dict(e.headers or {})
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             return 599, {"error": {"message": f"unreachable: {e}"}}, {}
+
+    # ---------------------------------------------------------------- local lane: Ollama's native API
+    def _stable_tools(self, lane: Lane, tools: list[dict]) -> list[dict]:
+        """Local models re-read everything that changes near the start of the prompt. Send one stable,
+        compact, sorted list (the union of tools seen) so Ollama reuses what it already read; the
+        procedural lock still blocks any tool not allowed in the current state."""
+        u = self._tool_union.setdefault(lane.id, {})
+        for t in tools:
+            f = t.get("function", {})
+            u[f.get("name", "")] = {"type": "function", "function": {
+                "name": f.get("name", ""), "description": compact_text(f.get("description", "")),
+                "parameters": compact_schema(f.get("parameters") or {"type": "object", "properties": {}})}}
+        return [u[k] for k in sorted(u)]
+
+    def _send_ollama_native(self, lane: Lane, model: str, body: dict) -> tuple[int, dict, dict[str, str]] | None:
+        st = self.stats[lane.id]
+        base = lane.base_url[:-3] if lane.base_url.endswith("/v1") else lane.base_url
+        messages = to_ollama_messages(body.get("messages", []))
+        tools = self._stable_tools(lane, body.get("tools") or [])
+        chars = len(json.dumps(messages)) + len(json.dumps(tools))
+        need = chars // 3 + 1024
+        num_ctx = 4096 if need <= 4096 else min(lane.max_ctx, -(-need // 2048) * 2048)
+        payload = {"model": lane.upstream_model(model), "messages": messages, "stream": True,
+                   "keep_alive": "30m", "options": {"num_ctx": num_ctx}}
+        if tools:
+            payload["tools"] = tools
+        req = urllib.request.Request(base + "/api/chat", data=json.dumps(payload).encode(),
+                                     headers={"Content-Type": "application/json"})
+        content, calls, final, n, t0, last_note = [], [], {}, 0, time.time(), time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=self.local_silence_timeout) as r:
+                for line in r:
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    if chunk.get("error"):
+                        return 500, {"error": {"message": chunk["error"]}}, {}
+                    msg = chunk.get("message") or {}
+                    if msg.get("content"):
+                        content.append(msg["content"])
+                        n += 1
+                    calls.extend(msg.get("tool_calls") or [])
+                    if time.time() - last_note > 3:
+                        last_note = time.time()
+                        self.on_event({"kind": "lane_progress", "lane": lane.id, "tokens": n,
+                                       "seconds": round(time.time() - t0)})
+                    if chunk.get("done"):
+                        final = chunk
+                        break
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 405):                 # an Ollama without /api/chat: use /v1 from now on
+                st.native = False                    # type: ignore[attr-defined]
+                return None
+            raw = e.read().decode(errors="replace")
+            try:
+                msg = json.loads(raw).get("error", raw)
+            except (json.JSONDecodeError, AttributeError):
+                msg = raw
+            code = 404 if "not found" in str(msg).lower() else e.code
+            return code, {"error": {"message": str(msg)[:300]}}, {}
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            return 599, {"error": {"message": f"unreachable: {e}"}}, {}
+        pe, pd = final.get("prompt_eval_count") or 0, final.get("prompt_eval_duration") or 0
+        ge, gd = final.get("eval_count") or 0, final.get("eval_duration") or 0
+        if pe > 50 and pd:
+            st.prefill_tps = _ema(st.prefill_tps, pe / (pd / 1e9))
+        if ge > 10 and gd:
+            st.gen_tps = _ema(st.gen_tps, ge / (gd / 1e9))
+        st.last_prompt_chars = len(json.dumps(body.get("messages", []))) + len(json.dumps(body.get("tools", [])))
+        oa_calls = [{"id": f"call_{i}_{int(t0)}", "type": "function",
+                     "function": {"name": c.get("function", {}).get("name", ""),
+                                  "arguments": json.dumps(c.get("function", {}).get("arguments") or {})}}
+                    for i, c in enumerate(calls)]
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+        if oa_calls:
+            message["tool_calls"] = oa_calls
+        return 200, {"id": "ollama", "object": "chat.completion", "model": model,
+                     "choices": [{"index": 0, "message": message,
+                                  "finish_reason": "tool_calls" if oa_calls else "stop"}],
+                     "usage": {"prompt_tokens": pe, "completion_tokens": ge, "total_tokens": pe + ge}}, {}
 
     def retry_after(self, status: int, data: Any, headers: dict[str, str]) -> float:
         """Cooldown seconds for a 429: Retry-After header, Gemini RetryInfo, or daily quota → next
@@ -352,6 +508,11 @@ class Pool:
         while True:
             for model, lane in self.plan(requested):
                 st = self.stats[lane.id]
+                slow = self.too_slow(lane, body)
+                if slow is not None:
+                    st.last_error = (f"too slow for this request on this computer (about {_mins(slow)} at "
+                                     f"{st.prefill_tps:.0f} tokens/s reading, {st.gen_tps:.1f} writing)")
+                    continue
                 with self.lock:
                     st.requests += 1
                     st.last_used = self.clock()
@@ -446,6 +607,7 @@ class Pool:
             return {"lanes": [{
                 "id": l.id, "provider": l.provider, "local": l.local, "models": l.models,
                 "owner": l.owner, "daily_cap": l.daily_cap, "last_error": self.stats[l.id].last_error,
+                "prefill_tps": round(self.stats[l.id].prefill_tps, 1), "gen_tps": round(self.stats[l.id].gen_tps, 2),
                 "used_today": self.stats[l.id].day_counts.get("__total__", 0)
                 if self.stats[l.id].day == self._today() else 0,
                 "has_key": bool(l.key_ref and self.key_lookup(l.key_ref)) if l.key_ref else None,

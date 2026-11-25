@@ -125,3 +125,78 @@ def test_household_keys_each_keep_their_owner_and_daily_share():
     assert st["gemini-alex"]["owner"] == "Alex" and st["gemini-alex"]["used_today"] == 2
     assert st["gemini-sam"]["used_today"] == 1
     up.stop()
+
+
+# ---- local lane on a slow CPU (Intel Mac): Ollama's native streaming API ---------------------------
+def _local_pool(up, **kw):
+    return Pool([Lane("ollama", "ollama", ["ollama:*"], up.url, local=True)], {"auto": ["ollama:llama3.2:3b"]},
+                key_lookup=lambda r: None, **kw)
+
+
+def _tool(name, desc="Does a thing. With many more words that a small model does not need."):
+    return {"type": "function", "function": {"name": name, "description": desc, "parameters": {
+        "type": "object", "properties": {"path": {"type": "string", "description": "where", "title": "P"}},
+        "required": ["path"]}}}
+
+
+def test_local_lane_uses_ollama_native_chat_streamed_and_measured():
+    from wright.llm import call
+    up = MockUpstream(ScriptedModel([call("fs__read", path="a.txt")], loop_last=True), native=True,
+                      speed=(12.0, 3.0))
+    events = []
+    pool = _local_pool(up, on_event=events.append)
+    body = {"model": "auto", "tools": [_tool("fs__read")], "messages": [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": [{"type": "text", "text": "look"},
+                                     {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]}
+    code, data, hdr = pool.complete(body)
+    assert code == 200 and hdr["x-wright-lane"].startswith("ollama/")
+    call0 = data["choices"][0]["message"]["tool_calls"][0]["function"]
+    assert call0["name"] == "fs__read" and json.loads(call0["arguments"]) == {"path": "a.txt"}
+    sent = up.native_log[-1]
+    assert sent["stream"] is True and sent["keep_alive"] == "30m" and sent["options"]["num_ctx"] >= 4096
+    assert sent["messages"][1]["images"] == ["AAAA"] and sent["messages"][1]["content"] == "look"
+    params = sent["tools"][0]["function"]["parameters"]
+    assert "description" not in params["properties"]["path"] and "title" not in params["properties"]["path"]
+    assert sent["tools"][0]["function"]["description"] == "Does a thing"
+    st = pool.status()["lanes"][0]
+    assert st["prefill_tps"] == 12.0 and st["gen_tps"] == 3.0
+    up.stop()
+
+
+def test_local_lane_keeps_one_stable_tool_list_so_ollama_can_reuse_its_reading():
+    from wright.llm import say as _say
+    up = MockUpstream(ScriptedModel([_say("ok")], loop_last=True), native=True)
+    pool = _local_pool(up)
+    pool.complete({"model": "auto", "messages": [{"role": "user", "content": "a"}], "tools": [_tool("plan__set")]})
+    pool.complete({"model": "auto", "messages": [{"role": "user", "content": "a"}], "tools": [_tool("fs__write")]})
+    pool.complete({"model": "auto", "messages": [{"role": "user", "content": "a"}], "tools": [_tool("plan__set")]})
+    names = [[t["function"]["name"] for t in b["tools"]] for b in up.native_log]
+    assert names == [["plan__set"], ["fs__write", "plan__set"], ["fs__write", "plan__set"]]
+    assert up.native_log[1]["tools"] == up.native_log[2]["tools"]              # byte-identical prefix
+    up.stop()
+
+
+def test_older_ollama_without_native_chat_falls_back_to_v1():
+    from wright.llm import say as _say
+    up = MockUpstream(ScriptedModel([_say("hello")], loop_last=True), native=False)
+    pool = _local_pool(up)
+    code, data, _ = pool.complete({"model": "auto", "messages": [{"role": "user", "content": "hi"}]})
+    assert code == 200 and data["choices"][0]["message"]["content"] == "hello"
+    assert pool.stats["ollama"].native is False
+    up.stop()
+
+
+def test_local_lane_too_slow_for_a_request_is_skipped_with_a_plain_reason():
+    from wright.llm import say as _say
+    up = MockUpstream(ScriptedModel([_say("ok")], loop_last=True), native=True)
+    pool = _local_pool(up, max_wait=0)
+    pool.stats["ollama"].prefill_tps, pool.stats["ollama"].gen_tps = 12.0, 3.0
+    pool.local_turn_budget = 120
+    huge = {"model": "auto", "messages": [{"role": "user", "content": "x" * 30000}]}
+    code, data, _ = pool.complete(huge)
+    assert code == 503 and "too slow for this request" in data["error"]["message"]
+    assert up.native_log == []                                                   # never sent
+    small = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+    assert pool.complete(small)[0] == 200
+    up.stop()

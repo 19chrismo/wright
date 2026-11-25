@@ -311,6 +311,7 @@ class Control:
                         "used_today": s.get("used_today", 0), "cooling": s.get("cooling", {}),
                         "total": s.get("total", 0), "last_used": s.get("last_used", 0),
                         "last_model": s.get("last_model", ""), "last_task": s.get("last_task", ""),
+                        "gen_tps": s.get("gen_tps", 0), "prefill_tps": s.get("prefill_tps", 0),
                         "has_key": bool(l.get("key_ref") and self.keys.get(l["key_ref"])) if not l.get("local") else None})
         self.events.emit("keys", keys=out)
         return out

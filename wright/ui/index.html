@@ -193,7 +193,7 @@ Object.assign(render,{
    add(div("card",`<h3>Keys in use</h3><table class="keys"><tr><th>Key</th><th>Whose</th><th>Today</th><th>Total</th><th>Last used</th><th>Status</th></tr>`+
    (e.keys||[]).map(k=>`<tr><td>${esc(k.id)}</td><td>${esc(k.owner||(k.local?"this Mac":"you"))}</td><td>${k.used_today+(k.daily_cap?" / "+k.daily_cap:"")}</td>
    <td>${k.total||0}</td><td>${esc(ago(k.last_used))}${k.last_model?`<div class="small">${esc(k.last_model)}${k.last_task?" — “"+esc(k.last_task)+"”":""}</div>`:""}</td>
-   <td>${k.local?"local model":(k.has_key?(Object.keys(k.cooling||{}).length?"resting":"ready"):"missing key")}</td></tr>`).join("")+`</table>
+   <td>${k.local?"local model"+(k.gen_tps?` · ${k.gen_tps} words/s`:""):(k.has_key?(Object.keys(k.cooling||{}).length?"resting":"ready"):"missing key")}</td></tr>`).join("")+`</table>
    <div class="small">Say “remove Sam's key” to take one out.</div>`,"keys"))},
 });
 function calText(c){return c&&c.graded?`calibration <b>${c.accuracy}</b> measured vs <b>${c.mean_confidence}</b> stated · n=${c.graded}`:"calibration — no history yet"}
@@ -211,9 +211,10 @@ const _r={...render};
 Object.assign(render,{
  task_start(e){act.on=true;act.since=Date.now();act.step=0;act.model="";act.what="Starting";act.thinking=0;
    pill("#p-state","state <b>working</b>","warn");actShow()},
- thinking(e){act.on=true;act.step=e.step||0;act.what=STATES[e.state]||"Working on it";act.thinking=Date.now();actShow()},
+ thinking(e){act.on=true;act.step=e.step||0;act.state=e.state;act.what=STATES[e.state]||"Working on it";act.thinking=Date.now();actShow()},
  assistant(e){act.thinking=0;if(e.lane)act.model=e.lane;_r.assistant(e);actShow()},
  state(e){act.what=STATES[e.to]||act.what;_r.state(e);actShow()},
+ lane_progress(e){act.model=e.lane;act.what=(STATES[act.state]||"Working on it")+` — writing (${e.tokens} so far)`;actShow()},
  task_end(e){act.on=false;actShow();if(e.status!=="done")pill("#p-state","state <b>"+esc(e.status)+"</b>",e.status==="stopped"?"":"bad");if(e.status==="stopped")note("Stopped. Say “resume” later or send a new request.","neutral")},
 });
 function connect(){const es=new EventSource("/api/events?since="+seq);es.onmessage=m=>{const e=JSON.parse(m.data);seq=e.seq+1;(render[e.kind]||(()=>{}))(e)};

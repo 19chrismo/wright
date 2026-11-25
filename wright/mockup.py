@@ -30,8 +30,12 @@ class MockUpstream:
     """keys: {key: {"ok_for": int|None, "then": "429"|"429-daily"|"401"|"500"}}; key None = no auth."""
 
     def __init__(self, brain: Model, keys: dict[str | None, dict] | None = None,
-                 models: list[str] | None = None):
+                 models: list[str] | None = None, native: bool = False,
+                 speed: tuple[float, float] = (15.0, 3.5)):
         self.brain = brain
+        self.native = native               # also answer Ollama's /api/chat (streaming NDJSON)
+        self.speed = speed                 # (prompt tokens/s, generated tokens/s) reported in eval stats
+        self.native_log: list[dict] = []
         self.models = models or ["models/gemini-2.5-flash", "models/gemini-2.5-pro"]
         self.keys = keys or {None: {"ok_for": None}}
         self.served: dict[str | None, int] = {}
@@ -63,6 +67,28 @@ class MockUpstream:
             def do_POST(self) -> None:
                 n = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(n) or b"{}")
+                if self.path.endswith("/api/chat"):
+                    if not outer.native:
+                        return self._send(404, {"error": "not found"})
+                    outer.native_log.append(body)
+                    msgs = [{"role": m["role"], "content": m.get("content", "")} for m in body.get("messages", [])]
+                    reply = outer.brain.complete(msgs, body.get("tools", []))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/x-ndjson")
+                    self.end_headers()
+                    words = (reply.text or "").split(" ")
+                    for w in words:
+                        if w:
+                            self.wfile.write((json.dumps({"message": {"role": "assistant", "content": w + " "},
+                                                          "done": False}) + "\n").encode())
+                    calls = [{"function": {"name": c.name, "arguments": c.args}} for c in reply.tool_calls]
+                    pe, ge = 1200, 60
+                    self.wfile.write((json.dumps({"message": {"role": "assistant", "content": "", "tool_calls": calls},
+                                                  "done": True, "prompt_eval_count": pe,
+                                                  "prompt_eval_duration": int(pe / outer.speed[0] * 1e9),
+                                                  "eval_count": ge, "eval_duration": int(ge / outer.speed[1] * 1e9)})
+                                 + "\n").encode())
+                    return
                 auth = self.headers.get("Authorization", "")
                 key = auth[7:] if auth.startswith("Bearer ") else None
                 with outer.lock:

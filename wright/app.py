@@ -68,7 +68,8 @@ def open_window(url: str, profile: Path) -> str:
 
 class App:
     def __init__(self, config: Config | None = None, model: Model | None = None, *, tools: str = "mcp",
-                 port: int | None = None, power_command: list[str] | None = None, token: str | None = None):
+                 port: int | None = None, power_command: list[str] | None = None, token: str | None = None,
+                 auto_resume: bool | None = None):
         self.config = config or Config.load()
         self.events = EventBus()
         self.pool_server = None
@@ -98,6 +99,7 @@ class App:
         self.updater = Updater(self.config.paths.home, events=self.events)
         self.control.updater = self.updater
         self._auto_update = (not injected) and bool(self.config.data.get("auto_update", True))
+        self._auto_resume = (not injected) if auto_resume is None else auto_resume
 
     def info(self) -> dict[str, Any]:
         from .persist import load_task
@@ -116,6 +118,8 @@ class App:
         self.ui.start()
         if not self.ui.force_ready:
             self.control.show_setup()          # the window opens on what (if anything) still needs doing
+        if self._auto_resume:
+            self.resume_interrupted()
         if self._auto_update and self.updater.available():
             import threading
 
@@ -130,6 +134,30 @@ class App:
         if window:
             open_window(self.ui.url, self.config.paths.home / "window-profile")
         return self
+
+    def resume_interrupted(self) -> str | None:
+        """A task cut off by a quit, crash or sleep (status still "running") picks up where it was, by
+        itself. Tasks the person stopped stay stopped until they say "resume"."""
+        import json
+        from .persist import load_task, unfinished
+        running = []
+        for p in unfinished(self.config.paths.tasks):
+            try:
+                if json.loads(p.read_text()).get("status") == "running":
+                    running.append(p)
+            except (OSError, ValueError):
+                continue
+        if not running:
+            return None
+        t = load_task(max(running, key=lambda p: p.stat().st_mtime))
+        if self.ui.force_ready or self.control.setup_status()["ready"]:
+            self.events.emit("notice", text=f"Picking up “{t.goal[:80]}” where it was interrupted.")
+            self.ui.start_task({"resume": t.id})
+        else:
+            self.ui.pending = {"resume": t.id, "_echoed": True}
+            self.events.emit("notice", text=f"“{t.goal[:80]}” was interrupted; it will continue as soon as an "
+                                            "AI model is set up.")
+        return t.id
 
     def restart(self) -> None:
         """Start the newest installed code in place, keeping the same window (same port and token)."""

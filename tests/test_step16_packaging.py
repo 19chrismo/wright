@@ -211,3 +211,24 @@ def test_doctor_measures_local_model_speed(tmp_path):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     assert local_tokens_per_second(f"http://127.0.0.1:{srv.server_address[1]}/v1", "llama3.2:3b") == 4.0
     srv.shutdown()
+
+
+def test_restarting_wright_picks_up_an_interrupted_task_by_itself(tmp_path):
+    from wright.app import App
+    p = subprocess.run([sys.executable, "-c", CRASH.format(tests=str(ROOT / "tests"), tmp=str(tmp_path))],
+                       cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode == 3                                                     # killed mid-task
+    resumed = []
+    app = App(agent_config(tmp_path), ScriptedModel([say("x")]), tools="local", port=0, power_command=[],
+              auto_resume=True)
+    app.agent.resume = lambda task_id: resumed.append(task_id)
+    app.start(window=False)
+    try:
+        for _ in range(100):
+            if resumed:
+                break
+            time.sleep(0.05)
+        assert len(resumed) == 1
+        assert any("where it was interrupted" in e.get("text", "") for e in app.events.of("notice"))
+    finally:
+        app.stop()
