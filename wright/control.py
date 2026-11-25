@@ -94,7 +94,10 @@ def _http(url: str, headers: dict[str, str] | None = None, timeout: float = 10) 
 
 
 def local_model_for_this_mac() -> str:
-    """qwen2.5:3b on 8 GB machines, qwen2.5:7b otherwise."""
+    """qwen2.5:3b on 8 GB machines and on Intel Macs (no GPU acceleration there, so a smaller model
+    is the usable one); qwen2.5:7b otherwise."""
+    if sys.platform == "darwin" and platform.machine() == "x86_64":
+        return "qwen2.5:3b"
     mem = 0
     try:
         if sys.platform == "darwin":

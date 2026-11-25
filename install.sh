@@ -55,14 +55,13 @@ fi
 say "4/5 Linking the wright command"
 mkdir -p "$HOME/.local/bin"
 ln -sf "$WHOME/venv/bin/wright" "$HOME/.local/bin/wright"
-case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
-  *) RC="$HOME/.zshrc"; [ "$(basename "${SHELL:-}")" = "bash" ] && RC="$HOME/.bashrc"
-     if ! grep -qs 'HOME/.local/bin' "$RC"; then
-       printf '\nexport PATH="$HOME/.local/bin:$PATH"   # added by Wright installer\n' >> "$RC"
-       echo "    added ~/.local/bin to PATH in $RC (open a new terminal window)"
-     fi ;;
-esac
+# Make `wright` available in every new Terminal window (check the shell's startup file, not this
+# script's PATH, which may already include ~/.local/bin).
+RC="$HOME/.zshrc"; [ "$(basename "${SHELL:-}")" = "bash" ] && RC="$HOME/.bash_profile"
+if ! grep -qs '\.local/bin' "$RC"; then
+  printf '\nexport PATH="$HOME/.local/bin:$PATH"   # added by Wright installer\n' >> "$RC"
+  echo "    added ~/.local/bin to PATH in $RC"
+fi
 if [ "$(uname)" = "Darwin" ] && command -v osacompile >/dev/null 2>&1; then
   mkdir -p "$HOME/Applications"
   osacompile -o "$HOME/Applications/Wright.app" \
@@ -78,7 +77,11 @@ else
   echo "    self-test FAILED — run: $WHOME/venv/bin/wright demo step1"; exit 1
 fi
 echo
-say "Installed. Next:"
-echo "  wright keys add gemini     # optional: paste a Gemini API key (stored in your Keychain)"
-echo "  wright doctor              # checks keys, Ollama, tools; prints exact fixes"
-echo "  wright                     # opens the Wright window"
+say "Installed."
+if [ "$(uname)" = "Darwin" ] && [ -d "$HOME/Applications/Wright.app" ] && [ "${WRIGHT_NO_LAUNCH:-0}" != "1" ]; then
+  open "$HOME/Applications/Wright.app"
+  echo "  The Wright window is opening. Next time, double-click Wright in the Applications"
+  echo "  folder inside your home folder (or drag it to the Dock). Everything else happens in the window."
+else
+  echo "  Open Wright with: $WHOME/venv/bin/wright   (or just 'wright' in a new terminal window)"
+fi

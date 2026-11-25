@@ -24,14 +24,16 @@ The installer:
 - adds **Wright.app** to `~/Applications`, which you can drag to the Dock;
 - runs a self-test.
 
-## Run (one command)
+## Run
 
-```sh
-wright
-```
+The installer opens the Wright window when it finishes. After that, open it
+any of these ways:
 
-This opens the Wright window. Running it again, or clicking Wright.app, brings
-back the same window; it never starts a second copy.
+- **Easiest:** double-click **Wright** in the Applications folder inside your
+  home folder, or drag it to the Dock.
+- **From Terminal:** type `wright` in a new Terminal window.
+
+Opening it again brings back the same window; it never starts a second copy.
 
 ## Everything else happens in the window
 

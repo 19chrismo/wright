@@ -121,11 +121,12 @@ def test_one_command_install_and_run_command(tmp_path):
     home.mkdir()
     env = {"HOME": str(home), "WRIGHT_HOME": str(home / ".wright"), "SHELL": "/bin/zsh",
            "PATH": "/usr/local/bin:/usr/bin:/bin", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
-    p = subprocess.run(["sh", str(ROOT / "install.sh"), "--no-browser"], env=env, capture_output=True, text=True,
+    p = subprocess.run(["sh", str(ROOT / "install.sh"), "--no-browser"], env={**env, "WRIGHT_NO_LAUNCH": "1"}, capture_output=True, text=True,
                        timeout=900)
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-2000:]
     assert "harness self-test passed" in p.stdout
     exe = home / ".local" / "bin" / "wright"
     assert exe.exists()
+    assert ".local/bin" in (home / ".zshrc").read_text()          # new Terminal windows find `wright`
     h = subprocess.run([str(exe), "--help"], env=env, capture_output=True, text=True)
     assert "open the app window (default)" in h.stdout
