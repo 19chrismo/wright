@@ -26,6 +26,14 @@ changed from v2, and why," then the earlier "What changed from v1, and why."
 **Status:** steps 1–16 are built. v3 applies as changes to that app, not as a
 restart. `HANDOFF.md` tracks what is done and what remains.
 
+**Owner decisions, 2026-11-25** (these override the matching lines below):
+- **Wright is for the owner only.** No per-person sign-in and no separate
+  chats per person. The owner's own iPhone, iPad and Mac reach the one chat.
+  Each phone or tablet is paired once by scanning a code shown on the Mac,
+  and stays signed in.
+- **DeepSeek is left out for now:** no DeepSeek API lane and no local
+  DeepSeek model.
+
 You are building an application. Not a prototype, not a demo, not a plan. A
 working local app I will use daily on my MacBook Air. Read this entire brief
 before writing code. Then build it. Report progress in past tense: what you
@@ -722,7 +730,7 @@ run from the documented install (section 12).
 | 12 | Stop hooks, including acceptance criteria and the baseline. | The agent cannot declare done while a hook fails, and it keeps working. |
 | 13 | Danger pre-mortem. | A risky step is blocked until its recovery has been rehearsed. |
 | 14 | Promotion gate. | Red hooks leave the real system untouched; green hooks promote; a failing post-promotion probe rolls back automatically. |
-| 15 | UI: one chat, as a web page on the home network that works on phones, with per-person sign-in, separate chats per person, and a push-to-talk voice button. | Grounding tags, danger report, regression status, calibration number and integrity flags are visible in the transcript; pasted images reach the model; it works from an iPhone; one person can't see another's chats. |
+| 15 | UI: one chat, as a web page on the home network that works on phones, reached only from the owner's paired devices, with a push-to-talk voice button. | Grounding tags, danger report, regression status, calibration number and integrity flags are visible in the transcript; pasted images reach the model; it works from an iPhone; an unpaired device and anything outside the home network are refused. |
 | 16 | Mac packaging. | One install command, one run command, the UI opens on the Mac and on an iPhone, the Mac stays awake during tasks, and an interrupted task resumes. |
 | 17 | Live run on my Mac. | A real goal completes with real keys. |
 
@@ -895,6 +903,9 @@ Rules:
     allowed). The older wording implied any pooling put the account at risk.
 15. **"Start now" replaced by a status line,** because steps 1–16 exist and
     v3 applies as changes to the built app.
+16. **Owner decisions (2026-11-25):** Wright is for the owner only (device
+    pairing replaces per-person sign-in and separate chats), and DeepSeek is
+    left out for now.
 
 ---
 

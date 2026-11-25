@@ -20,6 +20,41 @@ HERE = Path(__file__).resolve().parent
 MAX_BODY = 40 * 1024 * 1024
 
 
+NOT_PAIRED = ("<!doctype html><meta name=viewport content='width=device-width'><body style='font:17px -apple-system,"
+              "sans-serif;background:#070b12;color:#e6f6ff;padding:24px'><h2 style='color:#4fd8ff'>Wright</h2>"
+              "<p>This device isn't paired yet. On the Mac, say <b>connect my phone</b> in Wright and scan the "
+              "code it shows.</p>").encode()
+PAIR_EXPIRED = ("<!doctype html><meta name=viewport content='width=device-width'><body style='font:17px -apple-system,"
+                "sans-serif;background:#070b12;color:#e6f6ff;padding:24px'><h2 style='color:#4fd8ff'>Wright</h2>"
+                "<p>That code has expired or was already used. On the Mac, say <b>connect my phone</b> for a new "
+                "one.</p>").encode()
+MANIFEST = json.dumps({"name": "Wright", "short_name": "Wright", "start_url": "/", "display": "standalone",
+                       "background_color": "#070b12", "theme_color": "#070b12",
+                       "icons": [{"src": "/icon.png", "sizes": "180x180", "type": "image/png"}]}).encode()
+_ICON: bytes | None = None
+
+
+def icon_png(size: int = 180) -> bytes:
+    """A cyan ring on the dark glass background, drawn without image libraries."""
+    global _ICON
+    if _ICON is None:
+        import struct
+        import zlib
+        rows = []
+        c = (size - 1) / 2
+        for y in range(size):
+            row = bytearray(b"\x00")
+            for x in range(size):
+                d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5
+                ring = max(0.0, 1 - abs(d - size * 0.33) / (size * 0.06))
+                row += bytes((int(7 + (79 - 7) * ring), int(11 + (216 - 11) * ring), int(18 + (255 - 18) * ring)))
+            rows.append(bytes(row))
+        ch = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))  # noqa: E731
+        _ICON = (b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+                 + ch(b"IDAT", zlib.compress(b"".join(rows), 9)) + ch(b"IEND", b""))
+    return _ICON
+
+
 class Confirmations:
     """Bridges the agent's confirm callback to a click in the UI."""
 
@@ -54,9 +89,13 @@ class Confirmations:
 class UIServer:
     def __init__(self, agent_holder: dict, events: Any, confirmations: Confirmations,
                  host: str = "127.0.0.1", port: int = 7770, info: Callable[[], dict] | None = None,
-                 control: Any = None, force_ready: bool = False, token: str | None = None):
+                 control: Any = None, force_ready: bool = False, token: str | None = None,
+                 lan: bool = False, devices: Any = None):
         if not ipaddress.ip_address(host).is_loopback:
-            raise ValueError("the UI only binds to a loopback address")
+            raise ValueError("the UI only binds to a loopback address (phone access uses lan=True)")
+        from ..devices import Devices, allowed_client, allowed_host
+        self.lan = lan
+        self.devices = devices
         self.holder = agent_holder
         self.events = events
         self.confirmations = confirmations
@@ -75,18 +114,36 @@ class UIServer:
             def log_message(self, *a: Any) -> None:
                 pass
 
-            def _host_ok(self) -> bool:
-                host = (self.headers.get("Host") or "").split(":")[0]
-                if host not in ("127.0.0.1", "localhost"):
-                    return False
-                origin = self.headers.get("Origin")
-                if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost"):
-                    return False
+            def _loopback(self) -> bool:
                 return ipaddress.ip_address(self.client_address[0]).is_loopback
 
+            def _host_ok(self) -> bool:
+                """This Mac always; with phone access on, also the home network. Never the internet."""
+                host = self.headers.get("Host") or ""
+                origin = self.headers.get("Origin")
+                if not outer.lan:
+                    if host.split(":")[0] not in ("127.0.0.1", "localhost"):
+                        return False
+                    if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost"):
+                        return False
+                    return self._loopback()
+                if not allowed_host(host) or (origin and not allowed_host(urlparse(origin).netloc)):
+                    return False
+                return allowed_client(self.client_address[0])
+
+            def _cookies(self) -> dict[str, str]:
+                out = {}
+                for part in (self.headers.get("Cookie") or "").split(";"):
+                    if "=" in part:
+                        k, v = part.strip().split("=", 1)
+                        out[k] = v
+                return out
+
             def _authed(self) -> bool:
-                c = self.headers.get("Cookie") or ""
-                return f"wright={outer.token}" in [x.strip() for x in c.split(";")]
+                c = self._cookies()
+                if c.get("wright") == outer.token and self._loopback():       # the Mac's own window
+                    return True
+                return bool(outer.devices and outer.devices.check(c.get("wright_device", "")))   # a paired device
 
             def _send(self, code: int, body: bytes, ctype: str = "application/json",
                       extra: dict[str, str] | None = None) -> None:
@@ -116,12 +173,24 @@ class UIServer:
                 u = urlparse(self.path)
                 if not self._host_ok():
                     return self._json(403, {"error": "localhost only"})
-                if u.path == "/" and parse_qs(u.query).get("t", [""])[0] == outer.token:
+                if u.path == "/" and parse_qs(u.query).get("t", [""])[0] == outer.token and self._loopback():
                     return self._send(302, b"", "text/plain", {
                         "Set-Cookie": f"wright={outer.token}; HttpOnly; SameSite=Strict; Path=/",
                         "Location": "/"})
+                if u.path == "/pair" and outer.devices is not None:
+                    tok = outer.devices.pair(parse_qs(u.query).get("c", [""])[0], self.headers.get("User-Agent", ""))
+                    if not tok:
+                        return self._send(403, PAIR_EXPIRED, "text/html; charset=utf-8")
+                    outer.events.emit("notice", text="A new device was paired. Say “forget my phones” to undo.")
+                    return self._send(302, b"", "text/plain", {
+                        "Set-Cookie": f"wright_device={tok}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000",
+                        "Location": "/"})
+                if u.path == "/manifest.webmanifest":
+                    return self._send(200, MANIFEST, "application/manifest+json")
+                if u.path in ("/icon.png", "/apple-touch-icon.png"):
+                    return self._send(200, icon_png(), "image/png", {"Cache-Control": "max-age=86400"})
                 if not self._authed():
-                    return self._send(401, b"<p>Open Wright with the link it printed at launch.</p>", "text/html")
+                    return self._send(401, NOT_PAIRED, "text/html; charset=utf-8")
                 if u.path == "/":
                     return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
                 if u.path == "/theme.css":                 # the look Wright may change itself (gated)
@@ -194,7 +263,7 @@ class UIServer:
                         return self._json(200, r)
                 return self._json(404, {"error": "not found"})
 
-        self.httpd = ThreadingHTTPServer((host, port), H)
+        self.httpd = ThreadingHTTPServer(("0.0.0.0" if lan else host, port), H)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}/?t={self.token}"

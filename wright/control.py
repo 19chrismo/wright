@@ -44,6 +44,11 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("local_on", re.compile(r"^\s*(/local on|(keep|make) (it|everything|this) (private|local|offline)|"
                             r"local[- ]only( mode)?( on)?|(go|stay|work|run) (private|local|offline)( only)?)\s*\.?\s*$", re.I)),
     ("local_off", re.compile(r"^\s*(/local off|local[- ]only off|(use|allow) (the )?cloud( models?)?( again)?)\s*\.?\s*$", re.I)),
+    ("pair", re.compile(r"^\s*(/pair|connect (my )?(phone|iphone|ipad)|pair (my |a )?(phone|iphone|ipad|device)|"
+                        r"add (my )?(phone|iphone|ipad)|phone access( on)?|turn on phone access|"
+                        r"use (it|wright) (on|from) (my )?(phone|iphone|ipad))\s*[.!]*\s*$", re.I)),
+    ("pair_off", re.compile(r"^\s*(/pair off|turn off phone access|phone access off|"
+                            r"forget (my )?(phones|devices|iphone|ipad|phone))\s*[.!]*\s*$", re.I)),
     ("stop", re.compile(r"^\s*(/stop|/cancel|stop( it| that| the task| working)?|cancel( it| that| the task)?)\s*[.!]*\s*$", re.I)),
     ("resume", re.compile(r"^\s*(/resume|resume|continue|keep going|carry on|pick (it|that) back up)\s*[.!]*\s*$", re.I)),
     ("restart", re.compile(r"^\s*(/restart|restart( wright| yourself| the app)?|reload( wright)?)\s*\.?\s*$", re.I)),
@@ -118,6 +123,8 @@ class Control:
         self.updater: Any = None                             # set by the app (continuous, test-gated updates)
         self.on_restart: Callable[[], None] | None = None
         self.on_resume: Callable[[str], Any] | None = None
+        self.on_pair: Callable[[], Any] | None = None
+        self.on_pair_off: Callable[[], Any] | None = None
         self.on_quit: Callable[[], None] | None = None
 
     # ================================================================== setup status
@@ -487,6 +494,12 @@ class Control:
             return self.set_local_only(a == "local_on")
         if a == "undo":
             return self.undo(args.get("snapshot"))
+        if a in ("pair", "pair_off"):
+            fn = self.on_pair if a == "pair" else self.on_pair_off
+            if fn is None:
+                return {"ok": False, "message": "not available here"}
+            fn()
+            return {"ok": True}
         if a == "stop":
             if self.agent is None or not self.agent.cancel():
                 self.events.emit("notice", text="Nothing is running right now.")

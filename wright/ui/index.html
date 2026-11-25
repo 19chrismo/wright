@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wright</title>
+<meta name="theme-color" content="#070b12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wright">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{--bg:#f7f7f5;--panel:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#e4e3de;--accent:#2f5bd3;
 --ok:#1e7d45;--okbg:#e7f4ec;--bad:#b42318;--badbg:#fdecea;--warn:#9a6200;--warnbg:#fff4dc;--chip:#efeee9;
@@ -69,7 +75,7 @@ background:var(--chip);font-size:13px;color:var(--ink)}#activity.on{display:flex
 #activity .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite ease-in-out}
 #activity .grow{flex:1}#activity button{padding:4px 10px;font-size:12px}
 @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
-@media (max-width:600px){.msg{max-width:100%}header{padding:8px 12px}main{padding:12px}footer{padding:8px 12px}}
+@media (max-width:600px){textarea,.bar input[type=text],.form input,.form select{font-size:16px}#target{display:none}.msg{max-width:100%}header{padding:8px 12px}main{padding:12px}footer{padding:8px 12px}}
 </style>
 <link rel="stylesheet" href="/theme.css">
 </head>
@@ -89,7 +95,7 @@ background:var(--chip);font-size:13px;color:var(--ink)}#activity.on{display:flex
 <span id="act-time" class="small"></span><button type="button" id="act-stop">Stop</button></div>
 <form id="f">
   <div id="thumbs"></div>
-  <textarea id="t" placeholder="What should be done? You can also say: add Sam&#39;s Gemini key · keep it private · undo · check setup" data-testid="composer"></textarea>
+  <textarea id="t" placeholder="What should be done? (or: check setup · keep it private · undo)" data-testid="composer"></textarea>
   <div class="bar">
     <input type="text" id="target" placeholder="work in folder (optional) — e.g. ~/Projects/my-app">
     <label><button type="button" id="attach">Attach</button><input type="file" id="file" multiple hidden></label>
@@ -185,6 +191,13 @@ Object.assign(render,{
    <button class="primary">Connect</button> <span class="small" data-k="out"></span>`,"token-card");
    c.querySelector("button").onclick=async()=>{const i=c.querySelector("input");const r=await post("/api/connect",{name:e.name,url:e.url,token:i.value});i.value="";
      c.querySelector("[data-k=out]").textContent=r.message};add(c)},
+ pair_card(e){const c=div("card",`<h3>Connect your iPhone or iPad</h3>
+   <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><div style="background:#fff;padding:6px;border-radius:8px">${e.svg}</div>
+   <ol style="margin:0;padding-left:18px"><li>Open the <b>Camera</b> on your iPhone and point it at this code.</li>
+   <li>Tap the yellow link that appears. Wright opens, already signed in.</li>
+   <li>In Safari tap <b>Share → Add to Home Screen</b> for a Wright icon.</li></ol></div>
+   <div class="small" style="margin-top:6px">The code works once, for ${e.minutes} minutes, on your home Wi-Fi only.
+   Need another? Say “connect my phone” again. To undo: “forget my phones”.</div>`,"pair-card");add(c)},
  update(e){note(e.message,e.status==="updated"?"":e.status==="held_back"?"bad":"neutral")},
  key_added(e){note(e.message)}, key_removed(e){note(e.message,"neutral")}, local_only(e){note(e.message,"neutral")},
  undo(e){note(e.message,"neutral")}, connected(e){note(e.message)}, notice(e){note(e.text,"neutral")},

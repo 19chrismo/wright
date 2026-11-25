@@ -9,6 +9,7 @@ description = "Local-first single-window AI agent that builds the thing, with in
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3,<3",
+    "segno>=1.6",          # QR code for pairing the owner's phone (pure Python, BSD)
     # cryptography 49 and 50 publish no Intel-Mac wheels (PyPI JSON API, checked 2026-11-25);
     # 48.0.1 is the newest with a universal2 wheel, so Intel Macs never need a Rust toolchain.
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",

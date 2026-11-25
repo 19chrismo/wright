@@ -10,6 +10,9 @@ machine, for example the user's MacBook Air. `BRIEF.md` is the spec, and
 |---|---|
 | 1–16 (harness, pool, knowledge, memory, baseline, contract, lock, calibration, self-mod gate, MCP tools, sandbox, stop hooks, danger, promotion, UI, packaging) | done; each has its own test file in `tests/` |
 | Window as the single control surface (setup, keys, privacy, undo, connect) | done (`tests/test_window_control.py`) |
+| Brief v3 changes: install from a hash-locked uv.lock; single instance; C2 and host-OS confirms; caffeinate -s; doctor machine facts; local lane on Ollama's native streaming API with measured speed; auto-resume; activity bar and stop; changeable theme | done |
+| Owner-only phone access: home network, paired devices, QR pairing (`tests/test_phone_access.py`) | done |
+| Push-to-talk button (needs HTTPS on the home network for the iPhone microphone; the iPhone keyboard's dictation works now) | to do |
 | 17. Live run on the Mac with real keys | **to do on the Mac** (steps below) |
 
 The cloud session built and tested everything on Linux with a deterministic

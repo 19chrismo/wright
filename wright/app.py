@@ -83,13 +83,18 @@ class App:
         self.control = Control(self.config, self.events, self.pool_server.pool if self.pool_server else None,
                                self.agent)
         ui = self.config.data["ui"]
+        from .devices import Devices
+        self.devices = Devices(self.config.paths.home)
         self.ui = UIServer({"agent": self.agent}, self.events, self.confirm, ui.get("host", "127.0.0.1"),
                            port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
-                           control=self.control, force_ready=injected, token=token)
+                           control=self.control, force_ready=injected, token=token,
+                           lan=bool(ui.get("lan")), devices=self.devices)
         self.control.on_ready = self.ui.resume_pending
         self.control.on_restart = self.restart
         self.control.on_quit = self.quit
         self.control.on_resume = lambda task_id: self.ui.start_task({"resume": task_id})
+        self.control.on_pair = self.pair
+        self.control.on_pair_off = self.pair_off
         self.exec = os.execv                                   # replaced in tests
         if self.pool_server:                                   # remember which request each key served
             pool = self.pool_server.pool
@@ -120,6 +125,11 @@ class App:
             self.control.show_setup()          # the window opens on what (if anything) still needs doing
         if self._auto_resume:
             self.resume_interrupted()
+        marker = self.config.paths.home / "pair-pending"
+        if marker.exists():
+            marker.unlink()
+            if self.ui.lan:
+                self.show_pair_card()
         if self._auto_update and self.updater.available():
             import threading
 
@@ -158,6 +168,38 @@ class App:
             self.events.emit("notice", text=f"“{t.goal[:80]}” was interrupted; it will continue as soon as an "
                                             "AI model is set up.")
         return t.id
+
+    # ---------------------------------------------------------------- phone access (owner only)
+    def pair(self) -> None:
+        if not self.ui.lan:
+            self.config.data["ui"]["lan"] = True
+            self.config.save()
+            (self.config.paths.home / "pair-pending").write_text("1")
+            self.events.emit("notice", text="Turning on phone access. Wright restarts for a moment, then shows a "
+                                            "code to scan. If the Mac asks whether to accept incoming connections, "
+                                            "choose Allow (once).")
+            self.restart()
+            return
+        self.show_pair_card()
+
+    def show_pair_card(self) -> None:
+        import socket as _socket
+
+        import segno
+        from .devices import PAIR_SECONDS, lan_address
+        host = lan_address() or f"{_socket.gethostname().split('.')[0]}.local"
+        url = f"http://{host}:{self.ui.port}/pair?c={self.devices.new_code()}"
+        svg = segno.make(url, error="m").svg_inline(scale=5, dark="#000", light="#fff", border=2)
+        self.events.emit("pair_card", url=url, svg=svg, minutes=PAIR_SECONDS // 60,
+                         paired=len(self.devices.list()))
+
+    def pair_off(self) -> None:
+        n = self.devices.forget_all()
+        self.config.data["ui"]["lan"] = False
+        self.config.save()
+        self.events.emit("notice", text=f"Phone access is off and {n} paired device(s) were forgotten. "
+                                        "Wright restarts for a moment.")
+        self.restart()
 
     def restart(self) -> None:
         """Start the newest installed code in place, keeping the same window (same port and token)."""

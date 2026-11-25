@@ -78,7 +78,7 @@ class Paths:
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "ui": {"host": "127.0.0.1", "port": 7770},
+    "ui": {"host": "127.0.0.1", "port": 7770, "lan": False},   # lan: phone access (owner's paired devices)
     "pool": {
         "host": "127.0.0.1",
         "port": 8765,

@@ -55,12 +55,28 @@ before any AI model is set up:
 | "undo that" · "undo" again | Rolls back the last change Wright made · puts it back. |
 | "connect home assistant at http://…/api/mcp" | Attaches a device or service; a box asks for its access token. |
 | "update yourself" · "undo the update" | Checks for improvements now · goes back to the previous version. |
+| "connect my phone" · "forget my phones" | Shows a code to scan with your iPhone or iPad camera; the device then stays signed in · turns phone access off and forgets every paired device. |
+| "stop" · "keep going" · "restart Wright" · "quit Wright" | Stops the running job after its current step · picks it back up · restarts in place · closes Wright. |
 
 - **Keys:** go straight from the key box to the macOS Keychain. They never
   appear in the chat, the logs or anything sent to an AI model.
 - **A request sent before setup:** waits, and starts by itself once a model is
   ready.
 - **Anything else you type:** a goal, which Wright carries out.
+
+### On your iPhone and iPad
+
+Say **connect my phone** in Wright on the Mac.
+
+1. The first time, Wright restarts for a moment. If the Mac asks whether to
+   accept incoming connections, choose **Allow**.
+2. Wright shows a code. Point the iPhone **Camera** at it and tap the link.
+   Wright opens on the phone, signed in.
+3. In Safari, tap **Share → Add to Home Screen** for a Wright icon.
+
+Phone access works only on your home network, only for devices you paired
+this way, and each code works once, for 10 minutes. To talk instead of
+typing, use the microphone key on the iPhone keyboard.
 
 ### Models
 
