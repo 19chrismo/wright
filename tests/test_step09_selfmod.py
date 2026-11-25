@@ -90,3 +90,17 @@ def test_hidden_eval_is_outside_the_models_data_scope_and_hash_pinned(gate, tmp_
     f.write_text(f.read_text().replace("unicode-text-too", "x"))                      # tamper
     with pytest.raises(RuntimeError, match="hash pin"):
         gate.hidden.skill_cases("slugify")
+
+
+def test_self_modification_is_reachable_through_the_lock(tmp_path):
+    """Asking Wright in the window to change how it works reaches the gated self__propose tool."""
+    from agentkit import agent_config
+    from wright.agent import Agent
+    from wright.llm import ScriptedModel, say
+    agent = Agent(agent_config(tmp_path), ScriptedModel([say("x")]), tools="local", power_command=[])
+    from wright.harness import Task
+    t = Task(goal="g", workdir=tmp_path)
+    t.state["lock"] = {"state": "execute", "history": [], "idle": 0}
+    assert "self__propose" in agent.lock.visible_tools(t)
+    t.state["lock"]["state"] = "intent"
+    assert "self__propose" not in agent.lock.visible_tools(t)
