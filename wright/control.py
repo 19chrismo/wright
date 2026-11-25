@@ -44,6 +44,8 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("local_on", re.compile(r"^\s*(/local on|(keep|make) (it|everything|this) (private|local|offline)|"
                             r"local[- ]only( mode)?( on)?|(go|stay|work|run) (private|local|offline)( only)?)\s*\.?\s*$", re.I)),
     ("local_off", re.compile(r"^\s*(/local off|local[- ]only off|(use|allow) (the )?cloud( models?)?( again)?)\s*\.?\s*$", re.I)),
+    ("restart", re.compile(r"^\s*(/restart|restart( wright| yourself| the app)?|reload( wright)?)\s*\.?\s*$", re.I)),
+    ("quit", re.compile(r"^\s*(/quit|quit( wright)?|close wright|shut ?down( wright)?|stop wright)\s*\.?\s*$", re.I)),
     ("update", re.compile(r"^\s*(/update|update( now| yourself| wright)?|check for (updates|improvements)|"
                           r"get the latest( version)?)\s*\.?\s*$", re.I)),
     ("update_undo", re.compile(r"^\s*(/update undo|undo the (last )?update|go back to the (old|previous) version)\s*\.?\s*$", re.I)),
@@ -112,6 +114,8 @@ class Control:
         self.lock = threading.Lock()
         self.on_ready: Callable[[], None] | None = None     # e.g. start a goal that was waiting for setup
         self.updater: Any = None                             # set by the app (continuous, test-gated updates)
+        self.on_restart: Callable[[], None] | None = None
+        self.on_quit: Callable[[], None] | None = None
 
     # ================================================================== setup status
     def ollama_base(self) -> str:
@@ -479,6 +483,12 @@ class Control:
             return self.set_local_only(a == "local_on")
         if a == "undo":
             return self.undo(args.get("snapshot"))
+        if a in ("restart", "quit"):
+            fn = self.on_restart if a == "restart" else self.on_quit
+            if fn is None:
+                return {"ok": False, "message": "not available here"}
+            fn()
+            return {"ok": True}
         if a in ("update", "update_undo"):
             if self.updater is None:
                 self.events.emit("notice", text="Updates aren't available in this copy of Wright.")

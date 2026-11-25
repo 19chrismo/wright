@@ -190,7 +190,9 @@ Object.assign(render,{
 });
 function calText(c){return c&&c.graded?`calibration <b>${c.accuracy}</b> measured vs <b>${c.mean_confidence}</b> stated · n=${c.graded}`:"calibration — no history yet"}
 function connect(){const es=new EventSource("/api/events?since="+seq);es.onmessage=m=>{const e=JSON.parse(m.data);seq=e.seq+1;(render[e.kind]||(()=>{}))(e)};
- es.onerror=()=>{es.close();setTimeout(connect,1000)}}
+ es.onerror=()=>{es.close();if(seq>0){waitAndReload()}else{setTimeout(connect,1000)}}}
+function waitAndReload(){fetch("/api/info").then(r=>{if(r.ok)location.reload();else setTimeout(waitAndReload,1000)})
+ .catch(()=>setTimeout(waitAndReload,1000))}
 connect();
 function addImage(file){if(!file.type.startsWith("image/"))return false;const fr=new FileReader();fr.onload=()=>{const [h,b]=fr.result.split(",");images.push({mime:file.type,data:b});
  const im=new Image();im.src=fr.result;$("#thumbs").appendChild(im)};fr.readAsDataURL(file);return true}

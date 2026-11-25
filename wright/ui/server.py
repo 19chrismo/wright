@@ -54,7 +54,7 @@ class Confirmations:
 class UIServer:
     def __init__(self, agent_holder: dict, events: Any, confirmations: Confirmations,
                  host: str = "127.0.0.1", port: int = 7770, info: Callable[[], dict] | None = None,
-                 control: Any = None, force_ready: bool = False):
+                 control: Any = None, force_ready: bool = False, token: str | None = None):
         if not ipaddress.ip_address(host).is_loopback:
             raise ValueError("the UI only binds to a loopback address")
         self.holder = agent_holder
@@ -64,7 +64,7 @@ class UIServer:
         self.control = control
         self.force_ready = force_ready
         self.pending: dict | None = None          # a goal sent before any model was set up
-        self.token = secrets.token_urlsafe(24)
+        self.token = token or secrets.token_urlsafe(24)   # kept across "restart Wright" so the window stays open
         self.busy = threading.Lock()
         self.worker: threading.Thread | None = None
         outer = self

@@ -10,6 +10,24 @@ from typing import Any
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
+EXTRA_BIN_DIRS = ["/usr/local/bin", "/opt/homebrew/bin", "/opt/homebrew/sbin", "~/.local/bin",
+                  "/Applications/Ollama.app/Contents/Resources", "~/Applications/Ollama.app/Contents/Resources"]
+
+
+def ensure_path() -> list[str]:
+    """Apps opened from Finder or the Dock get a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), which
+    hides Homebrew, ~/.local/bin and the ollama command. Add the usual places that exist."""
+    have = os.environ.get("PATH", "").split(os.pathsep)
+    added = []
+    for d in EXTRA_BIN_DIRS:
+        d = os.path.expanduser(d)
+        if os.path.isdir(d) and d not in have:
+            added.append(d)
+    if added:
+        os.environ["PATH"] = os.pathsep.join(have + added)
+    return added
+
+
 def default_home() -> Path:
     return Path(os.environ.get("WRIGHT_HOME", "~/.wright")).expanduser().resolve()
 

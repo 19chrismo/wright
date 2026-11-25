@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("name")
     args = ap.parse_args(argv)
     cmd = args.cmd or "run"
+    from .config import ensure_path
+    ensure_path()                       # Wright.app starts with Finder's minimal PATH
 
     if cmd == "run":
         from .app import run_app

@@ -68,7 +68,7 @@ fi
 if [ "$(uname)" = "Darwin" ] && command -v osacompile >/dev/null 2>&1; then
   mkdir -p "$HOME/Applications"
   osacompile -o "$HOME/Applications/Wright.app" \
-    -e "do shell script \"$WHOME/venv/bin/wright run > $WHOME/logs/app.log 2>&1 &\"" >/dev/null
+    -e "do shell script \"export PATH=/usr/local/bin:/opt/homebrew/bin:\$HOME/.local/bin:\$PATH; $WHOME/venv/bin/wright run > $WHOME/logs/app.log 2>&1 &\"" >/dev/null
   echo "    Wright.app created in ~/Applications (drag it to the Dock)"
 fi
 mkdir -p "$WHOME/logs"

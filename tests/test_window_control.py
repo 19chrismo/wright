@@ -303,3 +303,22 @@ def test_gemini_gets_tool_schemas_it_accepts():
     assert pool.complete({"model": "auto", "messages": [], "tools": [tool]})[0] == 200
     assert up.log[-1]["tools"][0]["function"]["parameters"]["properties"]["content"] == {"type": "string"}
     up.stop()
+
+
+def test_restart_from_the_window_reruns_the_newest_code_in_the_same_window(tmp_path):
+    cfg = agent_config(tmp_path)
+    app = App(cfg, ScriptedModel([say("x")]), tools="local", port=0, power_command=[]).start(window=False)
+    execed = []
+    app.exec = lambda exe, argv: execed.append(argv)
+    token, port = app.ui.token, app.ui.port
+    assert route("restart Wright")["action"] == "restart" and route("quit")["action"] == "quit"
+    app.control.handle(route("restart Wright"))
+    for _ in range(100):
+        if execed:
+            break
+        time.sleep(0.05)
+    assert execed and execed[0][-3:] == ["wright", "run", "--no-window"]
+    assert os.environ.pop("WRIGHT_TOKEN") == token and os.environ.pop("WRIGHT_PORT") == str(port)
+    again = App(cfg, ScriptedModel([say("x")]), tools="local", power_command=[], token=token, port=0)
+    assert again.ui.token == token                                # the open window's cookie still works
+    again.ui.httpd.server_close()

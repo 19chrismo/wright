@@ -113,7 +113,8 @@ class Updater:
         self._record({"t": time.time(), "status": "updated", "from": info["head"], "to": info["remote"],
                       "changes": info["changes"][:20]})
         msg = (f"Updated itself with {info['behind']} improvement(s) after all tests passed. "
-               "They take effect the next time Wright opens. Say “undo the update” to go back.")
+               "Say “restart Wright” to switch to them now (your window stays open), or “undo the update” "
+               "to go back.")
         self._emit("update", status="updated", message=msg, changes=info["changes"][:10])
         return {"status": "updated", "message": msg, "changes": info["changes"]}
 

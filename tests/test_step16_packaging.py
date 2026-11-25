@@ -130,3 +130,19 @@ def test_one_command_install_and_run_command(tmp_path):
     assert ".local/bin" in (home / ".zshrc").read_text()          # new Terminal windows find `wright`
     h = subprocess.run([str(exe), "--help"], env=env, capture_output=True, text=True)
     assert "open the app window (default)" in h.stdout
+
+
+def test_app_opened_from_finder_still_finds_ollama_and_homebrew(tmp_path, monkeypatch):
+    """Finder/Dock launches get PATH=/usr/bin:/bin:/usr/sbin:/sbin; ollama lives in /usr/local/bin
+    (Intel) or /opt/homebrew/bin (Apple silicon)."""
+    from wright import config
+    fake = tmp_path / "usr-local-bin"
+    fake.mkdir()
+    (fake / "ollama").write_text("#!/bin/sh\necho ollama\n")
+    (fake / "ollama").chmod(0o755)
+    monkeypatch.setattr(config, "EXTRA_BIN_DIRS", [str(fake), str(tmp_path / "missing")])
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+    assert config.ensure_path() == [str(fake)]
+    import shutil
+    assert shutil.which("ollama") == str(fake / "ollama")
+    assert config.ensure_path() == []                                   # idempotent

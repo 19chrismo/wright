@@ -68,7 +68,7 @@ def open_window(url: str, profile: Path) -> str:
 
 class App:
     def __init__(self, config: Config | None = None, model: Model | None = None, *, tools: str = "mcp",
-                 port: int | None = None, power_command: list[str] | None = None):
+                 port: int | None = None, power_command: list[str] | None = None, token: str | None = None):
         self.config = config or Config.load()
         self.events = EventBus()
         self.pool_server = None
@@ -84,8 +84,11 @@ class App:
         ui = self.config.data["ui"]
         self.ui = UIServer({"agent": self.agent}, self.events, self.confirm, ui.get("host", "127.0.0.1"),
                            port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
-                           control=self.control, force_ready=injected)
+                           control=self.control, force_ready=injected, token=token)
         self.control.on_ready = self.ui.resume_pending
+        self.control.on_restart = self.restart
+        self.control.on_quit = self.quit
+        self.exec = os.execv                                   # replaced in tests
         if self.pool_server:                                   # remember which request each key served
             pool = self.pool_server.pool
             self.events.subscribe(lambda e: pool.annotate(e["lane"], self.agent.current.goal)
@@ -127,6 +130,35 @@ class App:
             open_window(self.ui.url, self.config.paths.home / "window-profile")
         return self
 
+    def restart(self) -> None:
+        """Start the newest installed code in place, keeping the same window (same port and token)."""
+        import threading
+
+        def go() -> None:
+            busy = self.ui.busy
+            while not busy.acquire(timeout=5):          # never cut a running task short
+                pass
+            self.events.emit("notice", text="Restarting Wright…")
+            time.sleep(0.5)
+            os.environ["WRIGHT_TOKEN"] = self.ui.token
+            os.environ["WRIGHT_PORT"] = str(self.ui.port)
+            try:
+                self.stop()
+            finally:
+                self.exec(sys.executable, [sys.executable, "-m", "wright", "run", "--no-window"])
+        threading.Thread(target=go, daemon=True).start()
+
+    def quit(self) -> None:
+        import threading
+
+        def go() -> None:
+            self.events.emit("notice", text="Wright is closing. Open it again from the Wright app any time.")
+            time.sleep(0.5)
+            (self.config.paths.home / "app.json").unlink(missing_ok=True)
+            self.stop()
+            os._exit(0)
+        threading.Thread(target=go, daemon=True).start()
+
     def stop(self) -> None:
         self.ui.stop()
         if self.pool_server:
@@ -159,7 +191,9 @@ def run_app(window: bool = True) -> int:
             open_window(url, cfg.paths.home / "window-profile")
         print(f"Wright is already running: {url}")
         return 0
-    app = App(cfg).start(window)
+    token = os.environ.pop("WRIGHT_TOKEN", None)            # set when restarting in place
+    port = os.environ.pop("WRIGHT_PORT", None)
+    app = App(cfg, token=token, port=int(port) if port else None).start(window)
     lock.write_text(json.dumps({"pid": os.getpid(), "url": app.ui.url}))
     os.chmod(lock, 0o600)
     print(f"Wright is running. Window: {app.ui.url}\nPress Ctrl+C to quit.", flush=True)
