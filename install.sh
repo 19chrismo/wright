@@ -34,13 +34,16 @@ fi
 echo "    using $PY ($("$PY" --version))"
 
 say "2/5 Creating $WHOME/venv and installing Wright"
+# --prefer-binary: take the newest version that ships a ready-made build for this machine (some
+# packages, e.g. cryptography, no longer publish Intel-Mac builds of their latest release, and
+# compiling them needs a Rust toolchain).
 mkdir -p "$WHOME"
 "$PY" -m venv "$WHOME/venv"
 "$WHOME/venv/bin/python" -m pip install -q --upgrade pip
 if [ "$BROWSER" = 1 ]; then
-  "$WHOME/venv/bin/python" -m pip install -q -e "$HERE[browser,test]"
+  "$WHOME/venv/bin/python" -m pip install -q --prefer-binary -e "$HERE[browser,test]"
 else
-  "$WHOME/venv/bin/python" -m pip install -q -e "$HERE[test]"
+  "$WHOME/venv/bin/python" -m pip install -q --prefer-binary -e "$HERE[test]"
 fi
 
 say "3/5 Browser tool"

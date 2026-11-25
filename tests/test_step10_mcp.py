@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from agentkit import can_launch_browser
 from wright.events import EventBus
 from wright.harness import Harness, Task, acceptance_hook
 from wright.llm import ScriptedModel, call, say
@@ -80,7 +81,7 @@ def test_image_ingestion_over_mcp(hub):
     assert json.loads(r.text.splitlines()[0])["width"] == 3
 
 
-@pytest.mark.skipif(not os.path.exists(CHROMIUM), reason="no chromium in this environment")
+@pytest.mark.skipif(not can_launch_browser(), reason="no browser available")
 def test_browser_over_mcp(hub):
     h, reg, wd = hub
     site = StaticSite({"/": ("text/html", "<html><head><title>Home</title></head><body>"

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentkit import agent_config
+from agentkit import agent_config, can_launch_browser, launch
 from wright.app import App
 from wright.llm import ScriptedModel, call, say
 
@@ -76,7 +76,7 @@ def fill_sid(steps):
     return out
 
 
-@pytest.mark.skipif(not os.path.exists(CHROMIUM), reason="no chromium in this environment")
+@pytest.mark.skipif(not can_launch_browser(), reason="no browser available")
 def test_one_window_chat_shows_integrity_information(tmp_path):
     from playwright.sync_api import sync_playwright
     real = tmp_path / "site"
@@ -88,7 +88,7 @@ def test_one_window_chat_shows_integrity_information(tmp_path):
     shot.write_bytes(png())
     try:
         with sync_playwright() as p:
-            b = p.chromium.launch(executable_path=CHROMIUM, args=["--no-sandbox"])
+            b = launch(p)
             page = b.new_page(viewport={"width": 1100, "height": 1400}, device_scale_factor=2)
             page.goto(app.ui.url)
             page.set_input_files("#file", str(shot))                          # attach a screenshot

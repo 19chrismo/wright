@@ -94,19 +94,8 @@ def _http(url: str, headers: dict[str, str] | None = None, timeout: float = 10) 
 
 
 def local_model_for_this_mac() -> str:
-    """qwen2.5:3b on 8 GB machines and on Intel Macs (no GPU acceleration there, so a smaller model
-    is the usable one); qwen2.5:7b otherwise."""
-    if sys.platform == "darwin" and platform.machine() == "x86_64":
-        return "qwen2.5:3b"
-    mem = 0
-    try:
-        if sys.platform == "darwin":
-            mem = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout.strip())
-        else:
-            mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except Exception:
-        pass
-    return "qwen2.5:3b" if 0 < mem <= 9 * 1024 ** 3 else "qwen2.5:7b"
+    from .localmodel import machine_default
+    return machine_default()
 
 
 class Control:
@@ -129,11 +118,38 @@ class Control:
                 return (l.get("base_url") or PROVIDER_DEFAULTS["ollama"]).rsplit("/v1", 1)[0]
         return PROVIDER_DEFAULTS["ollama"].rsplit("/v1", 1)[0]
 
-    def local_model(self) -> str:
+    def _route_local(self) -> str | None:
         for m in self.cfg.data["pool"]["routes"].get("auto", []):
             if m.startswith("ollama:"):
                 return m.split(":", 1)[1]
-        return local_model_for_this_mac()
+        return None
+
+    def _set_local_route(self, model: str) -> None:
+        routes = self.cfg.data["pool"]["routes"]
+        for name in ("auto", "fast"):
+            routes[name] = [m for m in routes.get(name, []) if not m.startswith("ollama:")] + [f"ollama:{model}"]
+        self.cfg.save()
+        if self.pool is not None:
+            self.pool.routes = routes
+
+    def _installed(self) -> list[dict] | None:
+        code, tags = _http(self.ollama_base() + "/api/tags", timeout=2)
+        return (tags or {}).get("models", []) if code == 200 else None
+
+    def local_model(self) -> str:
+        """The local model to use. Automatic: an already-installed suitable model (no download), else
+        the default for this machine."""
+        from .localmodel import choose, machine_default
+        chosen = self.cfg.data.get("local_model", "auto")
+        if chosen != "auto":
+            return chosen
+        installed = self._installed()
+        if installed is None:
+            return self._route_local() or machine_default()
+        model, _ = choose(installed)
+        if model != self._route_local():
+            self._set_local_route(model)
+        return model
 
     def setup_status(self) -> dict:
         lanes = self.cfg.data["pool"]["lanes"]
@@ -296,16 +312,17 @@ class Control:
                     break
                 wait(0.5)
         exe = shutil.which("ollama") or "ollama"
-        say(f"Downloading the local model {model} (a few GB; this can take a while)…")
-        p = self.runner([exe, "pull", model], capture_output=True, text=True)
-        ok = getattr(p, "returncode", 1) == 0
-        routes = self.cfg.data["pool"]["routes"]
-        for name in ("auto", "fast"):
-            r = [m for m in routes.get(name, []) if not m.startswith("ollama:")]
-            routes[name] = r + [f"ollama:{model}"]
-        self.cfg.save()
-        if self.pool is not None:
-            self.pool.routes = routes
+        from .localmodel import choose
+        model, need = choose(self._installed() or []) if self.cfg.data.get("local_model", "auto") == "auto" \
+            else (self.cfg.data["local_model"], True)
+        if need:
+            say(f"Downloading the local model {model} (a few GB; this can take a while)…")
+            p = self.runner([exe, "pull", model], capture_output=True, text=True)
+            ok = getattr(p, "returncode", 1) == 0
+        else:
+            say(f"Using {model}, which is already on this Mac — nothing to download.")
+            p, ok = None, True
+        self._set_local_route(model)
         msg = (f"The free local model {model} is ready. Wright now works even with no online key." if ok else
                f"Downloading {model} failed: {(getattr(p, 'stderr', '') or '')[-200:]}")
         self.events.emit("setup_progress", text=msg, done=True, ok=ok)

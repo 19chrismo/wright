@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agentkit import agent_config
+from agentkit import agent_config, can_launch_browser, launch
 from wright.app import App
 from wright.control import Control, route
 from wright.events import EventBus
@@ -93,21 +93,55 @@ def test_privacy_toggle_is_live(ctl):
 
 
 def test_local_model_install_uses_what_the_mac_has(ctl, monkeypatch):
+    """Never touches the real Ollama or downloads anything: the 'is Ollama running' check points at a
+    closed port or a stand-in, and every command goes to a fake runner."""
+    from wright.localmodel import machine_default
+    from wright.testkit import StaticSite
     c, ev, up, pool = ctl
     ran = []
+    c.runner = lambda argv, **kw: ran.append(argv) or type("P", (), {"returncode": 0, "stderr": ""})()
+    c.cfg.data["pool"]["lanes"][0]["base_url"] = "http://127.0.0.1:9/v1"           # no Ollama running
     monkeypatch.setattr("wright.control.shutil.which", lambda n: None)
     monkeypatch.setattr("wright.control.sys.platform", "linux")
     r = c.install_local(wait=lambda s: None)
-    assert not r["ok"] and "ollama.com/download" in r["message"]                 # one clear next step
-    from wright.testkit import StaticSite
+    assert not r["ok"] and "ollama.com/download" in r["message"] and ran == []     # one clear next step
     tags = StaticSite({"/api/tags": ("application/json", json.dumps({"models": []}))})
     c.cfg.data["pool"]["lanes"][0]["base_url"] = tags.url + "/v1"
     monkeypatch.setattr("wright.control.shutil.which", lambda n: "/usr/local/bin/ollama" if n == "ollama" else None)
-    c.runner = lambda argv, **kw: ran.append(argv) or type("P", (), {"returncode": 0, "stderr": ""})()
     r = c.install_local(wait=lambda s: None)
-    assert r["ok"] and ran[-1][:2] == ["/usr/local/bin/ollama", "pull"]
-    assert c.cfg.data["pool"]["routes"]["auto"][-1] == f"ollama:{ran[-1][2]}"
+    assert r["ok"] and ran == [["/usr/local/bin/ollama", "pull", machine_default()]]
+    assert c.cfg.data["pool"]["routes"]["auto"][-1] == f"ollama:{machine_default()}"
     tags.stop()
+
+
+def test_an_already_installed_model_is_used_without_downloading(ctl, monkeypatch):
+    from wright.testkit import StaticSite
+    c, ev, up, pool = ctl
+    ran = []
+    c.runner = lambda argv, **kw: ran.append(argv) or type("P", (), {"returncode": 0, "stderr": ""})()
+    tags = StaticSite({"/api/tags": ("application/json", json.dumps({"models": [
+        {"name": "llama3.2:3b", "size": 2_019_393_189}, {"name": "nomic-embed-text:latest", "size": 274_302_450}]}))})
+    c.cfg.data["pool"]["lanes"][0]["base_url"] = tags.url + "/v1"
+    monkeypatch.setattr("wright.control.shutil.which", lambda n: "/usr/local/bin/ollama" if n == "ollama" else None)
+    st = c.setup_status()
+    local = [i for i in st["items"] if i["id"] == "local"][0]
+    assert local["ok"] and "llama3.2:3b" in local["detail"] and st["ready"]       # ready with no download
+    assert c.install_local(wait=lambda s: None)["ok"] and ran == []
+    assert c.cfg.data["pool"]["routes"]["auto"][-1] == "ollama:llama3.2:3b"
+    assert pool.routes["auto"][-1] == "ollama:llama3.2:3b"
+    tags.stop()
+
+
+def test_machine_appropriate_default_and_choice(monkeypatch, tmp_path):
+    from wright import localmodel
+    from wright.config import Config
+    monkeypatch.setattr(localmodel, "intel_mac", lambda: True)
+    assert localmodel.machine_default() == "qwen2.5:3b"
+    cfg = Config.load(tmp_path / "h")
+    assert "ollama:qwen2.5:3b" in cfg.data["pool"]["routes"]["auto"]          # stock 7b swapped on Intel
+    big = [{"name": "qwen2.5:7b", "size": 4_700_000_000}, {"name": "llama3.2:3b", "size": 2_000_000_000}]
+    assert localmodel.choose(big, mem=8 * 1024 ** 3) == ("llama3.2:3b", False)  # smallest suitable on Intel
+    assert localmodel.choose([{"name": "nomic-embed-text", "size": 1}], mem=8 * 1024 ** 3) == ("qwen2.5:3b", True)
 
 
 def test_undo_from_the_chat_restores_the_last_promotion_and_can_be_undone(tmp_path):
@@ -153,7 +187,7 @@ def test_goal_sent_before_setup_waits_then_starts_by_itself(tmp_path):
         app.stop(); up.stop()
 
 
-@pytest.mark.skipif(not os.path.exists(CHROMIUM), reason="no chromium in this environment")
+@pytest.mark.skipif(not can_launch_browser(), reason="no browser available")
 def test_everything_from_the_window(tmp_path):
     from playwright.sync_api import sync_playwright
     cfg = agent_config(tmp_path)
@@ -164,7 +198,7 @@ def test_everything_from_the_window(tmp_path):
     app.control.keys.keychain = False
     try:
         with sync_playwright() as p:
-            b = p.chromium.launch(executable_path=CHROMIUM, args=["--no-sandbox"])
+            b = launch(p)
             page = b.new_page(viewport={"width": 1000, "height": 1100}, device_scale_factor=2)
             page.goto(app.ui.url)
             setup = page.wait_for_selector("[data-testid=setup]")

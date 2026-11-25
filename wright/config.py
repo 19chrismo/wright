@@ -90,6 +90,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "mcp_servers": {},  # user-attached servers; built-ins are added in mcp_hub.BUILTIN_SERVERS
     "local_only": False,
+    "local_model": "auto",        # "auto": use a suitable installed model, else the default for this machine
     "auto_update": True,          # fetch, test in staging, switch only when green; daily and at launch
 }
 
@@ -115,6 +116,12 @@ class Config:
         data = json.loads(json.dumps(DEFAULT_CONFIG))
         if paths.config_file.exists():
             data = deep_merge(data, json.loads(paths.config_file.read_text()))
+        if data.get("local_model", "auto") == "auto":
+            # The stock default is sized for Apple-silicon Macs; swap it for what suits this machine.
+            from .localmodel import machine_default
+            stock, mine = "ollama:qwen2.5:7b", f"ollama:{machine_default()}"
+            for name, route in data["pool"]["routes"].items():
+                data["pool"]["routes"][name] = [mine if m == stock else m for m in route]
         return cls(paths=paths, data=data)
 
     def save(self) -> None:
