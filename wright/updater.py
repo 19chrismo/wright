@@ -8,6 +8,7 @@ previous revision, so "undo the update" is one step. Changes take effect the nex
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -19,7 +20,10 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
-    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    # Never stop to ask for a password in the background (e.g. if the repository is made private):
+    # fail fast, and the window says the check couldn't run.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""}
+    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, env=env, timeout=120)
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()[:300]}")
     return p.stdout.strip()
