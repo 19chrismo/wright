@@ -104,3 +104,27 @@ def test_self_modification_is_reachable_through_the_lock(tmp_path):
     assert "self__propose" in agent.lock.visible_tools(t)
     t.state["lock"]["state"] = "intent"
     assert "self__propose" not in agent.lock.visible_tools(t)
+
+
+DEFAULT_THEME = (Path(__file__).resolve().parents[1] / "wright" / "ui" / "theme.css").read_text()
+
+
+def test_the_look_is_changeable_by_wright_but_never_hides_safety(gate):
+    ok = gate.propose("theme", "", DEFAULT_THEME.replace("#4fd8ff", "#7cffb2"), "greener accents")
+    assert ok["accepted"] and "#7cffb2" in gate.store.read("theme")
+    hides = gate.propose("theme", "", DEFAULT_THEME + "\n.confirm{display:none}\n", "cleaner look")
+    assert not hides["accepted"] and hides["stage"] == "hidden_eval"
+    shrinks = gate.propose("theme", "", DEFAULT_THEME + "\n#activity, .blocked { font-size: 0 }\n", "less noise")
+    assert not shrinks["accepted"] and shrinks["stage"] == "hidden_eval"
+    remote = gate.propose("theme", "", "body{background:url(https://example.com/x.png)}", "pretty")
+    assert not remote["accepted"] and remote["stage"] == "visible"
+    gate.rollback(gate.store.log()[-1].split()[0])                              # back to the start
+    assert gate.store.read("theme") is None
+
+
+def test_new_hidden_checks_arrive_without_touching_pinned_ones(gate):
+    pins = json.loads(gate.hidden.pins.read_text())
+    assert "theme.json" in pins and "skills.json" in pins
+    original = pins["skills.json"]
+    gate.hidden.install()
+    assert json.loads(gate.hidden.pins.read_text())["skills.json"] == original

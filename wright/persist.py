@@ -73,7 +73,7 @@ def unfinished(tasks_dir: Path) -> list[Path]:
         return out
     for p in sorted(tasks_dir.glob("*/state.json")):
         try:
-            if json.loads(p.read_text()).get("status") == "running":
+            if json.loads(p.read_text()).get("status") in ("running", "stopped"):
                 out.append(p)
         except (json.JSONDecodeError, OSError):
             continue

@@ -322,3 +322,38 @@ def test_restart_from_the_window_reruns_the_newest_code_in_the_same_window(tmp_p
     again = App(cfg, ScriptedModel([say("x")]), tools="local", power_command=[], token=token, port=0)
     assert again.ui.token == token                                # the open window's cookie still works
     again.ui.httpd.server_close()
+
+
+def test_stop_and_resume_from_the_chat(tmp_path):
+    from wright.agent import Agent
+    from wright.llm import call
+    cfg = agent_config(tmp_path)
+    holder = {}
+
+    def press_stop(m):
+        holder["agent"].cancel()                                  # the person types "stop" mid-task
+        return call("plan__status")
+    agent = Agent(cfg, ScriptedModel([call("plan__status"), press_stop, call("plan__status")]), tools="local",
+                  events=EventBus(), power_command=[])
+    holder["agent"] = agent
+    task = agent.run("anything at all", target=tmp_path / "t")
+    assert task.status == "stopped" and task.steps == 1        # the step asked for after "stop" never ran
+    from wright.persist import unfinished
+    assert len(unfinished(cfg.paths.tasks)) == 1                  # resumable
+    assert route("stop")["action"] == "stop" and route("keep going")["action"] == "resume"
+    agent.model = agent.harness.model = ScriptedModel([say("thinking")])
+    agent.lock.idle_turns = 0
+    again = agent.resume(task.id)
+    assert again.status != "stopped" and again.steps == 1         # continued from where it stopped
+
+
+def test_activity_events_say_what_wright_is_doing(tmp_path):
+    from wright.agent import Agent
+    from wright.llm import call
+    ev = EventBus()
+    agent = Agent(agent_config(tmp_path), ScriptedModel([call("plan__status"), say("x")]), tools="local",
+                  events=ev, power_command=[])
+    agent.lock.idle_turns = 0
+    agent.run("anything", target=tmp_path / "t")
+    th = ev.of("thinking")
+    assert th and th[0]["state"] == "intent" and th[0]["step"] == 0

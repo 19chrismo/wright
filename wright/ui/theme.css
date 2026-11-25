@@ -1,0 +1,29 @@
+/* Wright default look: the household's Home Assistant style — dark, cyan #4fd8ff accents,
+   blurred glass cards. Wright may change this file through its self-modification gate
+   ("make the window look like …"); the hidden check keeps safety cards visible. */
+:root, :root:not([data-theme=light]) {
+  --bg: #070b12; --panel: rgba(18, 28, 44, .55); --ink: #e6f6ff; --muted: #8aa6b8;
+  --line: rgba(79, 216, 255, .18); --accent: #4fd8ff; --chip: rgba(79, 216, 255, .10);
+  --ok: #5ff2b0; --okbg: rgba(95, 242, 176, .12); --bad: #ff7a8a; --badbg: rgba(255, 122, 138, .13);
+  --warn: #ffd166; --warnbg: rgba(255, 209, 102, .12); --src: #5ff2b0; --inf: #4fd8ff; --unk: #ffd166;
+}
+body {
+  background: radial-gradient(1200px 700px at 15% -10%, rgba(79, 216, 255, .16), transparent 60%),
+              radial-gradient(900px 600px at 110% 10%, rgba(140, 90, 255, .14), transparent 60%), #070b12;
+  background-attachment: fixed;
+}
+header, footer {
+  background: rgba(10, 18, 30, .55); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  border-color: var(--line);
+}
+header h1 { color: var(--accent); text-shadow: 0 0 12px rgba(79, 216, 255, .55); letter-spacing: .6px; }
+.card, .msg.assistant, #activity {
+  background: var(--panel); border: 1px solid var(--line); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px); box-shadow: 0 8px 30px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+.card.report { border-color: rgba(79, 216, 255, .55); box-shadow: 0 0 24px rgba(79, 216, 255, .18); }
+.msg.user { background: linear-gradient(135deg, #1aa7d6, #4fd8ff); color: #031018; }
+button.primary { background: linear-gradient(135deg, #1aa7d6, #4fd8ff); color: #031018; }
+textarea, .bar input[type=text], .form input, .form select { background: rgba(7, 12, 20, .65); border-color: var(--line); }
+.pill { border: 1px solid var(--line); }
+#activity .dot { background: var(--accent); box-shadow: 0 0 10px var(--accent); }

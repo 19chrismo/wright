@@ -124,6 +124,15 @@ class UIServer:
                     return self._send(401, b"<p>Open Wright with the link it printed at launch.</p>", "text/html")
                 if u.path == "/":
                     return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+                if u.path == "/theme.css":                 # the look Wright may change itself (gated)
+                    agent = outer.holder.get("agent")
+                    css = None
+                    try:
+                        css = agent.selfmod.store.read("theme") if agent is not None else None
+                    except Exception:
+                        css = None
+                    body = (css or (HERE / "theme.css").read_text()).encode()
+                    return self._send(200, body, "text/css; charset=utf-8")
                 if u.path == "/api/info":
                     return self._json(200, outer.info())
                 if u.path == "/api/events":

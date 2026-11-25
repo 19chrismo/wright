@@ -174,8 +174,13 @@ class Harness:
                 fresh = self.context_builder(task)
                 if fresh is not None:
                     task.messages = fresh
+            if task.state.get("cancel"):
+                task.status, task.result = "stopped", "Stopped at your request."
+                break
             visible = self.visible_tools(task)
             tools = self.registry.specs(visible)
+            self.events.emit("thinking", task=task.id, step=task.steps,
+                             state=(task.state.get("lock") or {}).get("state", ""))
             try:
                 reply: Reply = self.model.complete(_wire(task.messages), tools)   # plan
             except ModelUnavailable as e:
@@ -188,6 +193,8 @@ class Harness:
                              calls=[c.name for c in reply.tool_calls])
             if reply.tool_calls:
                 for call in reply.tool_calls:                 # act
+                    if task.state.get("cancel"):
+                        break
                     task.steps += 1
                     task.subtask_steps += 1
                     res = self.execute_call(task, call)

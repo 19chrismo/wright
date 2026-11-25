@@ -64,8 +64,14 @@ button.primary{background:var(--accent);color:#fff}button:disabled{opacity:.5;cu
 .form input,.form select{padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:13px inherit}
 .small{font-size:12px;color:var(--muted)}a{color:var(--accent)}
 table.keys{border-collapse:collapse;width:100%;font-size:13px}table.keys td,table.keys th{text-align:left;padding:4px 8px;border-top:1px solid var(--line)}
+#activity{display:none;align-items:center;gap:10px;max-width:860px;margin:0 auto 6px;padding:7px 12px;border-radius:10px;
+background:var(--chip);font-size:13px;color:var(--ink)}#activity.on{display:flex}
+#activity .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite ease-in-out}
+#activity .grow{flex:1}#activity button{padding:4px 10px;font-size:12px}
+@keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
 @media (max-width:600px){.msg{max-width:100%}header{padding:8px 12px}main{padding:12px}footer{padding:8px 12px}}
 </style>
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 <header>
@@ -79,6 +85,8 @@ table.keys{border-collapse:collapse;width:100%;font-size:13px}table.keys td,tabl
 </header>
 <main id="main"><div id="log"><div class="empty" id="empty">Describe what you want built or fixed. Paste screenshots, drop config files or logs.<br>Wright does it, verifies it, and shows how it kept things safe.</div></div></main>
 <footer>
+<div id="activity" data-testid="activity"><span class="dot"></span><span class="grow" id="act-text">Working…</span>
+<span id="act-time" class="small"></span><button type="button" id="act-stop">Stop</button></div>
 <form id="f">
   <div id="thumbs"></div>
   <textarea id="t" placeholder="What should be done? You can also say: add Sam&#39;s Gemini key · keep it private · undo · check setup" data-testid="composer"></textarea>
@@ -189,6 +197,24 @@ Object.assign(render,{
    <div class="small">Say “remove Sam's key” to take one out.</div>`,"keys"))},
 });
 function calText(c){return c&&c.graded?`calibration <b>${c.accuracy}</b> measured vs <b>${c.mean_confidence}</b> stated · n=${c.graded}`:"calibration — no history yet"}
+
+const STATES={intent:"Understanding your request",knowledge:"Looking things up",baseline:"Checking what works now",
+ execute:"Working on it",verify:"Checking the result",promote:"Applying the change",report:"Writing the report"};
+const act={on:false,since:0,what:"Working on it",model:"",step:0,thinking:0};
+function actShow(){const a=$("#activity");a.classList.toggle("on",act.on);if(!act.on)return;
+ const t=Math.round((Date.now()-act.thinking)/1000);
+ $("#act-text").textContent=act.what+(act.step?` · step ${act.step}`:"")+(act.model?` · ${act.model}`:"");
+ $("#act-time").textContent=act.thinking?`thinking ${t<60?t+" s":Math.floor(t/60)+" min "+(t%60)+" s"}`:""}
+setInterval(actShow,1000);
+$("#act-stop").onclick=()=>post("/api/action",{action:"stop"});
+const _r={...render};
+Object.assign(render,{
+ task_start(e){act.on=true;act.since=Date.now();act.step=0;act.model="";act.what="Starting";act.thinking=0;actShow()},
+ thinking(e){act.on=true;act.step=e.step||0;act.what=STATES[e.state]||"Working on it";act.thinking=Date.now();actShow()},
+ assistant(e){act.thinking=0;if(e.lane)act.model=e.lane;_r.assistant(e);actShow()},
+ state(e){act.what=STATES[e.to]||act.what;_r.state(e);actShow()},
+ task_end(e){act.on=false;actShow();if(e.status==="stopped")note("Stopped. Say “resume” later or send a new request.","neutral")},
+});
 function connect(){const es=new EventSource("/api/events?since="+seq);es.onmessage=m=>{const e=JSON.parse(m.data);seq=e.seq+1;(render[e.kind]||(()=>{}))(e)};
  es.onerror=()=>{es.close();if(seq>0){waitAndReload()}else{setTimeout(connect,1000)}}}
 function waitAndReload(){fetch("/api/info").then(r=>{if(r.ok)location.reload();else setTimeout(waitAndReload,1000)})

@@ -142,3 +142,18 @@ def test_ui_refuses_foreign_hosts_and_missing_token(tmp_path):
             UIServer({}, None, None, host="0.0.0.0", port=0)
     finally:
         app.stop()
+
+
+def test_window_uses_the_theme_wright_maintains(tmp_path):
+    app = App(agent_config(tmp_path), ScriptedModel([say("hi")]), tools="local", port=0,
+              power_command=[]).start(window=False)
+    base = f"http://127.0.0.1:{app.ui.port}"
+    try:
+        get = lambda: urllib.request.urlopen(urllib.request.Request(
+            base + "/theme.css", headers={"Cookie": f"wright={app.ui.token}"}), timeout=5).read().decode()
+        assert "#4fd8ff" in get()                                              # the household's glass style
+        css = get().replace("#4fd8ff", "#ff9f40")
+        assert app.agent.selfmod.propose("theme", "", css, "orange accents")["accepted"]
+        assert "#ff9f40" in get()                                              # live, no restart
+    finally:
+        app.stop()

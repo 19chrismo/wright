@@ -88,6 +88,7 @@ class App:
         self.control.on_ready = self.ui.resume_pending
         self.control.on_restart = self.restart
         self.control.on_quit = self.quit
+        self.control.on_resume = lambda task_id: self.ui.start_task({"resume": task_id})
         self.exec = os.execv                                   # replaced in tests
         if self.pool_server:                                   # remember which request each key served
             pool = self.pool_server.pool

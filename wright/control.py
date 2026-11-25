@@ -44,6 +44,8 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("local_on", re.compile(r"^\s*(/local on|(keep|make) (it|everything|this) (private|local|offline)|"
                             r"local[- ]only( mode)?( on)?|(go|stay|work|run) (private|local|offline)( only)?)\s*\.?\s*$", re.I)),
     ("local_off", re.compile(r"^\s*(/local off|local[- ]only off|(use|allow) (the )?cloud( models?)?( again)?)\s*\.?\s*$", re.I)),
+    ("stop", re.compile(r"^\s*(/stop|/cancel|stop( it| that| the task| working)?|cancel( it| that| the task)?)\s*[.!]*\s*$", re.I)),
+    ("resume", re.compile(r"^\s*(/resume|resume|continue|keep going|carry on|pick (it|that) back up)\s*[.!]*\s*$", re.I)),
     ("restart", re.compile(r"^\s*(/restart|restart( wright| yourself| the app)?|reload( wright)?)\s*\.?\s*$", re.I)),
     ("quit", re.compile(r"^\s*(/quit|quit( wright)?|close wright|shut ?down( wright)?|stop wright)\s*\.?\s*$", re.I)),
     ("update", re.compile(r"^\s*(/update|update( now| yourself| wright)?|check for (updates|improvements)|"
@@ -115,6 +117,7 @@ class Control:
         self.on_ready: Callable[[], None] | None = None     # e.g. start a goal that was waiting for setup
         self.updater: Any = None                             # set by the app (continuous, test-gated updates)
         self.on_restart: Callable[[], None] | None = None
+        self.on_resume: Callable[[str], Any] | None = None
         self.on_quit: Callable[[], None] | None = None
 
     # ================================================================== setup status
@@ -483,6 +486,22 @@ class Control:
             return self.set_local_only(a == "local_on")
         if a == "undo":
             return self.undo(args.get("snapshot"))
+        if a == "stop":
+            if self.agent is None or not self.agent.cancel():
+                self.events.emit("notice", text="Nothing is running right now.")
+                return {"ok": False}
+            return {"ok": True}
+        if a == "resume":
+            from .persist import load_task, unfinished
+            left = unfinished(self.cfg.paths.tasks)
+            if not left or self.on_resume is None:
+                self.events.emit("notice", text="There's nothing to pick back up.")
+                return {"ok": False}
+            latest = max(left, key=lambda p: p.stat().st_mtime)
+            t = load_task(latest)
+            self.events.emit("notice", text=f"Picking up “{t.goal[:80]}” where it stopped.")
+            self.on_resume(t.id)
+            return {"ok": True}
         if a in ("restart", "quit"):
             fn = self.on_restart if a == "restart" else self.on_quit
             if fn is None:

@@ -353,6 +353,8 @@ class Agent:
             tgt.sb.last_green = cps[-1]["id"] if cps else tgt.sb.checkpoints.take(tgt.sb.root, "resume")
             self.targets[task.id] = tgt
         task.state["new_context"] = True
+        task.state.pop("cancel", None)
+        task.status = "running"
         self.events.emit("resumed", task=task.id, state=task.state.get("lock", {}).get("state"),
                          steps=task.steps)
         return self._drive(task)
@@ -374,6 +376,10 @@ class Agent:
         return task
 
     def _finish(self, task: Task) -> None:
+        if task.status == "stopped":                     # resumable later with "resume"
+            task.state.pop("cancel", None)
+            self.checkpoint(task)
+            return
         if task.status == "running":
             task.status = "failed"
             task.result = task.result or "Stopped unexpectedly."
@@ -390,6 +396,14 @@ class Agent:
         task.state["report"] = rep
         self.events.emit("report", task=task.id, report=rep, text=report_mod.render(rep))
         self.checkpoint(task)
+
+    def cancel(self) -> bool:
+        """Stop the running task after its current step (the task stays resumable)."""
+        if self.current is None:
+            return False
+        self.current.state["cancel"] = True
+        self.events.emit("notice", text="Stopping after the current step…")
+        return True
 
     def close(self) -> None:
         if self.hub:
