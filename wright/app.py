@@ -151,7 +151,12 @@ class App:
                 items.append({"id": t.id, "goal": t.goal[:200], "state": t.state.get("lock", {}).get("state")})
             except Exception:
                 continue
-        return {"unfinished": items, "recent": self.recent(), "name": self.config.data.get("owner_name", ""),
+        try:
+            projects = self.agent.projects.cards()
+        except Exception:
+            projects = []
+        return {"unfinished": items, "recent": self.recent(), "projects": projects,
+                "name": self.config.data.get("owner_name", ""),
                 "calibration": self.agent.continuity.calibration.overall(),
                 "tools": self.agent.registry.names(),
                 "pool": self.pool_server.pool.status() if self.pool_server else None}

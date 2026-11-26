@@ -64,6 +64,7 @@ class Dispatch:
     reasons: list[str] = field(default_factory=list)
     estimate: dict[str, Any] = field(default_factory=dict)
     warning: str = ""             # e.g. private but the local model isn't installed
+    project: dict = field(default_factory=dict)   # {"id", "name", "private"} when it is a project's job
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -73,10 +74,35 @@ def _words(text: str) -> int:
     return len(re.findall(r"\w+", text))
 
 
+def without_project_name(text: str, name: str) -> str:
+    """"snow bot: design the motor mount" → "design the motor mount", so a project's name ("bot",
+    "network") doesn't decide the size of every job in it."""
+    words = re.findall(r"[a-z0-9]+", (name or "").lower())
+    if not words:
+        return text
+    rx = re.compile(r"\b(?:the\s+|my\s+|our\s+)?" + r"[\W_]+".join(map(re.escape, words))
+                    + r"s?\b(?:\s+(?:project|notebook))?", re.I)
+    m = rx.search(text)
+    if not m:
+        return text
+    before, after = text[:m.start()], text[m.end():]
+    before = re.sub(r"^\s*(?:(?:work|working|keep working)\s+on|continue(?:\s+with)?|for|in|on)?\s*$", "",
+                    before, flags=re.I)
+    if not before.strip():                                # "snow bot: …", "for the snow bot, …"
+        out = after
+    elif not after.strip(" ?.!") and re.search(r"\s(?:for|in|on|of|with|to|about)\s*$", before, re.I):
+        out = re.sub(r"\s+(?:for|in|on|of|with|to|about)\s*$", "", before, flags=re.I) + after.strip()
+    else:                                                 # "what motor should the snow bot use?"
+        out = before + "it" + after
+    return re.sub(r"\s{2,}", " ", out).strip(" ,:;—–-") or text
+
+
 def classify(text: str, *, images: int = 0, has_cloud: bool = True, has_local: bool = True,
-             local_only: bool = False) -> Dispatch:
+             local_only: bool = False, project: dict | None = None) -> Dispatch:
     full = text or ""
     head = full.split("\n\n---", 1)[0]               # dropped files are appended after a "---" line
+    if project:
+        head = without_project_name(head, project.get("name", ""))
     ask = REQUEST_PREFIX.sub("", head, count=1).strip()
     reasons: list[str] = []
 
@@ -102,14 +128,18 @@ def classify(text: str, *, images: int = 0, has_cloud: bool = True, has_local: b
     else:
         size = "large" if (BIG.search(ask) or n > 60) else "small" if (SMALL.search(ask) and n <= 20) else "medium"
 
-    private = bool(PRIVATE.search(full))
+    private_project = bool(project and project.get("private"))
+    private = bool(PRIVATE.search(full)) or private_project
     warning = ""
     if local_only:
         route, where = "local", "this-mac"
         reasons.append("private mode is on — everything stays on this Mac")
     elif private:
-        hit = PRIVATE.search(full).group(0)  # type: ignore[union-attr]
-        reasons.append(f"looks private (mentions “{hit}”) — stays on this Mac")
+        if private_project:
+            reasons.append(f"part of the private “{project['name']}” project — stays on this Mac")  # type: ignore[index]
+        else:
+            hit = PRIVATE.search(full).group(0)  # type: ignore[union-attr]
+            reasons.append(f"looks private (mentions “{hit}”) — stays on this Mac")
         route, where = "local", "this-mac"
         if not has_local:
             warning = ("This looks private, so it should stay on this Mac, but the free local model isn't "
@@ -124,8 +154,13 @@ def classify(text: str, *, images: int = 0, has_cloud: bool = True, has_local: b
         route, where = "fast", "online"
     else:
         route, where = "auto", "online"
+    proj = {}
+    if project:
+        proj = {k: project.get(k) for k in ("id", "name", "private")}
+        reasons.append(f"part of the “{project.get('name')}” project — I'll read its notebook first and "
+                       "write this job into it")
     return Dispatch(mode=mode, size=size, private=private, route=route, where=where, reasons=reasons,
-                    warning=warning)
+                    warning=warning, project=proj)
 
 
 def local_seconds_per_step(gen_tps: float = 0.0, prefill_tps: float = 0.0) -> float:
@@ -181,7 +216,8 @@ def estimate(d: Dispatch, history: Iterable[dict] = (), *, gen_tps: float = 0.0,
 
 def plan_request(text: str, *, images: int = 0, has_cloud: bool = True, has_local: bool = True,
                  local_only: bool = False, history: Iterable[dict] = (), gen_tps: float = 0.0,
-                 prefill_tps: float = 0.0) -> Dispatch:
-    d = classify(text, images=images, has_cloud=has_cloud, has_local=has_local, local_only=local_only)
+                 prefill_tps: float = 0.0, project: dict | None = None) -> Dispatch:
+    d = classify(text, images=images, has_cloud=has_cloud, has_local=has_local, local_only=local_only,
+                 project=project)
     d.estimate = estimate(d, history, gen_tps=gen_tps, prefill_tps=prefill_tps)
     return d

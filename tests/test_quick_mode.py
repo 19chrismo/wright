@@ -120,3 +120,27 @@ def test_window_home_quick_answer_do_it_and_plan_card(tmp_path):
     finally:
         app.stop()
     assert app.config.data["owner_name"] == "Robin"
+
+
+def test_a_changed_plan_is_estimated_from_finished_jobs_too(tmp_path):
+    """"Keep it on this Mac" on the plan card re-estimates from the same learned history as the first plan."""
+    import time
+    from wright.app import App
+    cfg = agent_config(tmp_path)
+    app = App(cfg, ScriptedModel([say("ok")], loop_last=True), tools="local", port=0, power_command=[]).start(window=False)
+    started = []
+    app.agent.run = lambda text, **kw: started.append(kw)
+    for _ in range(2):
+        app.agent.continuity.log.append({"type": "task", "goal": "earlier job", "mode": "build", "size": "medium",
+                                         "where": "this-mac", "outcome": "done", "seconds": 900, "steps": 20})
+    try:
+        _, body = app.ui.start_task({"text": "build me a web page that lists my 3D prints"})
+        app.ui.go(body["needs_go"], "local")
+        for _ in range(100):
+            if started:
+                break
+            time.sleep(0.02)
+        est = started[0]["dispatch"]["estimate"]
+        assert est["seconds"] == 900 and "2 similar jobs" in est["basis"]
+    finally:
+        app.stop()

@@ -179,6 +179,7 @@ def episode_from_task(task: Any) -> dict:
         "size": (task.state.get("dispatch") or {}).get("size", "medium"),
         "where": (task.state.get("dispatch") or {}).get("where", "online"),
         "estimate_seconds": ((task.state.get("dispatch") or {}).get("estimate") or {}).get("seconds"),
+        "project": task.state.get("project"),
     }
 
 

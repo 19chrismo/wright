@@ -57,6 +57,8 @@ before any AI model is set up:
 | "update yourself" · "undo the update" | Checks for improvements now · goes back to the previous version. |
 | "connect my phone" · "forget my phones" | Shows a code to scan with your iPhone or iPad camera; the device then stays signed in · turns phone access off and forgets every paired device. |
 | "call me Sam" | The home screen greets you by that name. |
+| "new project: snow bot — a robot that clears the driveway" | Starts a project notebook. See "Projects" below. |
+| "my projects" · "work on the snow bot" | Lists your projects · opens one's notebook, with a **Continue** button for the next step. |
 | "stop" · "keep going" · "restart Wright" · "quit Wright" | Stops the running job after its current step · picks it back up · restarts in place · closes Wright. |
 
 - **Keys:** go straight from the key box to the macOS Keychain. They never
@@ -140,6 +142,36 @@ Every request is sorted first, instantly, without asking an AI model
   measured speed of this Mac. Each report shows "took X (estimate Y)".
 
 Set `"confirm_builds": false` in `~/.wright/config.json` to skip the card.
+
+## Projects: work that lasts weeks
+
+A project (the snow bot, the P10 map, an accounting helper for work) keeps a
+**notebook** (`wright/projects.py`):
+
+- the goal;
+- phases (to do, doing, done);
+- a parts list (need, ordered, have);
+- decisions and why;
+- what was printed or tested, and how it went;
+- what's next;
+- every job that worked on it.
+
+How to use it:
+
+- **Start one:** type "new project: snow bot — a robot that clears the
+  driveway", or tap the **New project** tile. **Plan it with me** asks Wright
+  to suggest phases, a parts list and first steps, and saves them.
+- **Pick it up:** projects appear as cards on the home screen. Tap one, or
+  type "work on the snow bot". The notebook opens with **Continue: <next
+  step>**.
+- **Jobs in a project:** any request that names a project becomes one of its
+  jobs, for example "snow bot: design the motor mount". The plan card shows
+  📒 Snow bot. Wright reads the notebook before it starts, builds in the
+  project's own folder (`~/Wright Projects/snow-bot`), writes its decisions,
+  parts and tests into the notebook as it goes, and sets the next step when it
+  finishes.
+- **Private projects:** a project whose name or goal looks private (accounting,
+  passwords, money and so on) keeps every job and its notebook on this Mac.
 
 ## What happens when you send a job
 
@@ -254,6 +286,7 @@ scripting or remote use.
 | `self/` | git repository of the prompt, role contract, config and skills that the agent may change through the self-modification gate. |
 | `hidden_eval/` | Hash-pinned held-out evaluation. Outside the model's data scope. |
 | `tasks/<id>/` | Sandbox, checkpoints, snapshots, `state.json` (for resume), and the baseline manifest. |
+| `projects/<id>/notebook.json` | One notebook per project. Only Wright's `notebook__update` tool changes it; no file or shell tool can write here. |
 
 ## Formats you can audit
 

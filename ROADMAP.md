@@ -21,6 +21,7 @@ CA$20 a month, nothing financial, nothing dangerous.
 | **Time estimate** before starting, learned from finished jobs and measured local speed | `dispatch.estimate`, episodes record mode/size/where |
 | **Quick mode:** questions and research answered read-only, without the build stages; a needed change becomes a "Do it" button | `agent._run_quick`, `prompts/quick.md` |
 | **Window:** plan card (Go / keep it on this Mac / cancel), home screen, plain-language progress, Details toggle, "call me …" | `ui/index.html`, `ui/server.py` |
+| **Project notebook:** goal, phases, parts, decisions and why, tests, next steps, jobs; "work on the snow bot" with a Continue button; project cards on the home screen; a job that names a project reads its notebook, builds in its folder and is recorded; private projects stay on this Mac | `projects.py`, `tests/test_projects.py` |
 
 ## Next, in order
 
@@ -31,11 +32,9 @@ only through the self-update (which runs the tests again first).
    aistudio.google.com, then real jobs. Measure real speeds and replace the
    estimate defaults in `dispatch.py` (`SECONDS_PER_STEP`, `DEFAULT_STEPS`)
    with measured numbers.
-2. **Project notebook.** Jobs that last weeks (the snow bot, the P10 map, an
-   accounting helper for work) get a notebook: goal, phases, parts list,
-   decisions and why, what was printed and tested, what's next. "Work on the
-   snow bot" picks up where it left off. Projects appear as cards on the home
-   screen.
+2. ~~Project notebook~~ (done, see the table above). Still open for it: a
+   phone-sized check of the notebook card on the iPhone, and a "rename
+   project" command.
 3. **Learning loop and library.** Before a job, Wright lists what it doesn't
    know yet, then reads the best sources in order: maker's docs and manuals,
    standards, the actual code of well-maintained GitHub projects (cloned

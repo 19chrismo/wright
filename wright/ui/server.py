@@ -286,6 +286,9 @@ class UIServer:
         if self.control is not None and not body.get("resume"):
             if not body.get("force_task") and not body.get("images"):
                 routed = __import__("wright.control", fromlist=["route"]).route(text0)
+                if routed and routed["action"] == "project_open" and \
+                        not self.control.find_project(routed["args"].get("name", "")):
+                    routed = None                     # "work on my CV" with no such project: a normal request
                 if routed:
                     self.events.emit("user", text=text0, images=[], target=None)
                     if routed["action"] == "key_card":
@@ -357,23 +360,31 @@ class UIServer:
         except Exception:
             caps = {}
         try:
-            d = agent.plan(text, images=len(body.get("images") or []), caps=caps)
+            kw = {"project": body["project"]} if body.get("project") else {}
+            d = agent.plan(text, images=len(body.get("images") or []), caps=caps, **kw)
         except Exception as e:                                # never block a request on the estimate
             self.events.emit("notice", text=f"Couldn't estimate this one ({type(e).__name__}); starting anyway.")
             return None
         forced = body.get("mode")
         if forced in ("quick", "build") and forced != d["mode"]:
-            from ..dispatch import Dispatch, estimate
+            from ..dispatch import Dispatch
             dd = Dispatch(**{k: v for k, v in d.items() if k != "estimate"})
             dd.mode = forced
             if forced == "build" and dd.route == "fast":
                 dd.route = "auto"
             dd.reasons[0] = ("makes or changes something — I'll work on a copy first, check it, then hand "
                              "it over with undo") if forced == "build" else dd.reasons[0]
-            dd.estimate = estimate(dd, gen_tps=float(caps.get("gen_tps") or 0),
-                                   prefill_tps=float(caps.get("prefill_tps") or 0))
+            dd.estimate = self._estimate(dd, caps)
             d = dd.as_dict()
         return d
+
+    def _estimate(self, dd: Any, caps: dict) -> dict:
+        """A changed plan's estimate, learned from finished jobs like the first one was."""
+        agent = self.holder.get("agent")
+        if agent is not None and hasattr(agent, "estimate"):
+            return agent.estimate(dd, caps)
+        from ..dispatch import estimate
+        return estimate(dd, gen_tps=float(caps.get("gen_tps") or 0), prefill_tps=float(caps.get("prefill_tps") or 0))
 
     def _needs_go(self, body: dict, plan: dict) -> bool:
         if body.get("go") or not self.confirm_builds:
@@ -403,7 +414,7 @@ class UIServer:
             return 200, {"cancelled": True}
         plan = dict(body["dispatch"])
         if choice in ("local", "online"):
-            from ..dispatch import Dispatch, estimate
+            from ..dispatch import Dispatch
             dd = Dispatch(**{k: v for k, v in plan.items() if k != "estimate"})
             if choice == "local":
                 dd.route, dd.where = "local", "this-mac"
@@ -411,9 +422,7 @@ class UIServer:
             else:
                 dd.route, dd.where = ("fast" if dd.mode == "quick" and dd.size != "large" else "auto"), "online"
                 dd.reasons.append("you chose to send it online")
-            caps = self.caps() or {}
-            dd.estimate = estimate(dd, gen_tps=float(caps.get("gen_tps") or 0),
-                                   prefill_tps=float(caps.get("prefill_tps") or 0))
+            dd.estimate = self._estimate(dd, self.caps() or {})
             plan = dd.as_dict()
         return self.start_task({**body, "dispatch": plan, "go": True})
 

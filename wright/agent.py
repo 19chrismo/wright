@@ -25,6 +25,7 @@ from .lock import Lock
 from .memory import memory_tools
 from .persist import load_task, save_task
 from .power import keep_awake
+from .projects import Projects, notebook_tools
 from .selfmod import SelfModGate, selfmod_tools
 from .servers import fs as fsmod
 from .servers.code import run_snippet
@@ -81,6 +82,8 @@ class Agent:
 
         # ---- memory, self store, contract
         self.semantic = SemanticStore(self.paths.semantic)
+        self.projects = Projects(self.paths.projects,
+                                 Path(self.config.data.get("projects_dir", "~/Wright Projects")).expanduser())
         self.skills = SkillLibrary(self.paths.procedural / "skills")
         self.selfmod = SelfModGate(self.paths, self.skills, self._skill_exec)
         self.contract = RoleContract.from_dict(json.loads(self.selfmod.store.read("contract") or "{}"))
@@ -97,7 +100,8 @@ class Agent:
         core = (knowledge_tools(get, cache_dir=self.paths.semantic / "_cache")
                 + memory_tools(self.continuity.log) + scope_tools(get) + self.lock.tools(get)
                 + danger_tools(get, self._run_in_sandbox, self.events) + selfmod_tools(self.selfmod)
-                + skill_tools(self.skills, self._skill_exec, get, self._skill_run_in_task))
+                + skill_tools(self.skills, self._skill_exec, get, self._skill_run_in_task)
+                + notebook_tools(self.projects, get))
         for t in core:
             self.registry.register(t)
 
@@ -140,7 +144,7 @@ class Agent:
 
     # ================================================================== quick mode
     QUICK_CORE = ("knowledge__capture", "knowledge__version", "knowledge__decide", "knowledge__show",
-                  "memory__episodes", "mode__build")
+                  "memory__episodes", "mode__build", "notebook__read", "notebook__update")
 
     def _quick_visible(self, task: Task) -> set[str]:
         """Read-only tools only: nothing on this Mac or the network can change in quick mode."""
@@ -171,6 +175,11 @@ class Agent:
         self.current = task
         task.state["on_decision"] = calibration_hook(self.continuity.calibration, lambda: self.current)
         old = self._route_model(task)
+        if not task.messages:
+            task.messages = self.quick_harness.start_messages(task)
+            notebook = self._notebook_text(task)
+            if notebook:                                  # a project's question: its notebook comes first
+                task.messages.append({"role": "user", "provenance": "harness", "content": notebook})
         try:
             with keep_awake(self.power_command, self.events):
                 self.quick_harness.run(task)
@@ -276,8 +285,15 @@ class Agent:
     def _digest_extra(self, task: Task) -> str:
         o = self.continuity.calibration.overall()
         flags = task.state.get("flags", [])
-        return (f"calibration: accuracy {o['accuracy']} vs stated {o['mean_confidence']} over {o['graded']} claims; "
-                f"integrity flags this task: {len(flags)}")
+        out = (f"calibration: accuracy {o['accuracy']} vs stated {o['mean_confidence']} over {o['graded']} claims; "
+               f"integrity flags this task: {len(flags)}")
+        notebook = self._notebook_text(task)
+        return f"{out}\n{notebook}" if notebook else out
+
+    def _notebook_text(self, task: Task) -> str:
+        """The project notebook, read fresh each time (the job may have just updated it)."""
+        p = self.projects.get(task.state.get("project"))
+        return self.projects.render(p) if p else ""
 
     def checkpoint(self, task: Task) -> None:
         if task.state.get("task_dir"):
@@ -389,22 +405,35 @@ class Agent:
         return rep
 
     # ================================================================== running tasks
-    def plan(self, text: str, images: int = 0, caps: dict | None = None) -> dict:
+    def plan(self, text: str, images: int = 0, caps: dict | None = None, project: str | None = None) -> dict:
         """The dispatcher's decision and time estimate for a request (see dispatch.py). `caps` says
-        what is set up: has_cloud, has_local, gen_tps, prefill_tps (the app passes live values)."""
+        what is set up: has_cloud, has_local, gen_tps, prefill_tps (the app passes live values).
+        `project` is a project id (the notebook's Continue button); otherwise a project named in the
+        text makes this one of its jobs."""
         from .dispatch import plan_request
+        p = self.projects.get(project) if project else self.projects.mentioned(text)
         lanes = self.config.data["pool"]["lanes"]
         caps = {"has_cloud": any(not l.get("local") for l in lanes),
                 "has_local": any(l.get("local") for l in lanes), **(caps or {})}
-        hist = []
-        try:
-            hist = [r["entry"] for r in self.continuity.log.all()[-400:] if r["entry"].get("type") == "task"]
-        except Exception:
-            pass
         d = plan_request(text, images=images, has_cloud=caps["has_cloud"], has_local=caps["has_local"],
-                         local_only=bool(self.config.data.get("local_only")), history=hist,
-                         gen_tps=float(caps.get("gen_tps") or 0), prefill_tps=float(caps.get("prefill_tps") or 0))
+                         local_only=bool(self.config.data.get("local_only")), history=self._history(),
+                         gen_tps=float(caps.get("gen_tps") or 0), prefill_tps=float(caps.get("prefill_tps") or 0),
+                         project=p)
         return d.as_dict()
+
+    def _history(self) -> list[dict]:
+        """Finished jobs, for the time estimate."""
+        try:
+            return [r["entry"] for r in self.continuity.log.all()[-400:] if r["entry"].get("type") == "task"]
+        except Exception:
+            return []
+
+    def estimate(self, d: Any, caps: dict | None = None) -> dict:
+        """Re-estimate a changed plan ("keep it on this Mac", "Do it") from the same learned history."""
+        from .dispatch import estimate
+        caps = caps or {}
+        return estimate(d, self._history(), gen_tps=float(caps.get("gen_tps") or 0),
+                        prefill_tps=float(caps.get("prefill_tps") or 0))
 
     def _route_model(self, task: Task) -> Any:
         """Point the model client at this task's route (fast/auto/deep/local); returns the old one."""
@@ -422,7 +451,12 @@ class Agent:
             task.state["dispatch"] = dispatch
             self.events.emit("dispatch", task=task.id, mode=dispatch.get("mode"), size=dispatch.get("size"),
                              where=dispatch.get("where"), estimate=dispatch.get("estimate"),
-                             private=dispatch.get("private"))
+                             private=dispatch.get("private"), project=dispatch.get("project") or None)
+        project = self.projects.get(((dispatch or {}).get("project") or {}).get("id"))
+        if project:
+            task.state["project"] = project["id"]
+            if not target and not target_spec:            # a project's builds all happen in its own folder
+                target = project["folder"]
         if dispatch and dispatch.get("mode") == "quick" and not target_spec:
             work = tdir / "work"                    # quick mode reads; nothing is promoted anywhere
             work.mkdir(parents=True, exist_ok=True)
@@ -512,6 +546,12 @@ class Agent:
         rep["seconds"] = round(time.time() - task.started)
         if task.state.get("proposed_build"):
             rep["proposed_build"] = task.state["proposed_build"]
+        project = self.projects.get(task.state.get("project"))
+        if project and task.status != "blocked":          # "blocked" = no model was set up; nothing happened
+            self.projects.record_job(project["id"], {
+                "task_id": task.id, "goal": task.goal[:300], "outcome": task.status, "mode": rep["mode"],
+                "seconds": rep["seconds"], "summary": (task.result or "")[:400], "where": rep["where"]})
+            rep["project"] = {"id": project["id"], "name": project["name"]}
         task.state["report"] = rep
         self.events.emit("report", task=task.id, report=rep, text=report_mod.render(rep))
         self.checkpoint(task)

@@ -59,6 +59,13 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("undo", re.compile(r"^\s*(/undo|/rollback\s+\S+|undo( that| it| the last( change| promotion)?)?|"
                         r"roll ?back( that| the last change)?|revert( that| the last change)?)\s*\.?\s*$", re.I)),
     ("connect", re.compile(r"^\s*(/connect|connect)\s+(.{1,40}?)\s+(?:at|to|on)?\s*(https?://\S+)\s*$", re.I)),
+    ("projects", re.compile(r"^\s*(/projects|(?:show|list|open)?\s*(?:me\s+)?(?:my|all|the|our)?\s*projects|"
+                            r"what (?:are )?(?:my|our) projects(?: are)?|what projects (?:do i have|are there))"
+                            r"\s*[.?!]*\s*$", re.I)),
+    # "work on the snow bot" opens its notebook; when no project has that name it is an ordinary request
+    ("project_open", re.compile(r"^\s*(?:/project\s+|(?:let'?s\s+)?(?:work|keep working)\s+on\s+|"
+                                r"continue(?:\s+with)?\s+|(?:go\s+)?back to\s+|open\s+|show\s+(?:me\s+)?|"
+                                r"pick up\s+|resume\s+)(?P<name>[^:?\n]{2,60}?)\s*[.!]*\s*$", re.I)),
     ("name", re.compile(r"^\s*(/name\s*|call me\s+|my name is\s+|my name's\s+)(?!(?:when|if|after|back|later|at|on|tomorrow|tonight|in|once|before)\b)([A-Za-z][A-Za-z\-']{0,20}(?: [A-Za-z][A-Za-z\-']{0,20})?)\s*[.!]*\s*$", re.I)),
 ]
 
@@ -66,6 +73,10 @@ RULES: list[tuple[str, re.Pattern]] = [
 def route(text: str) -> dict | None:
     """Recognise setup/control requests deterministically (no model needed). None → it is a task."""
     t = text.strip()
+    if t and "\n\n---" not in t:
+        from .projects import parse_new
+        if parse_new(t) is not None:                      # "New project: snow bot — …" (any length)
+            return {"action": "new_project", "args": {"text": t}}
     if not t or len(t.split()) > 16:
         return None
     for action, rx in RULES:
@@ -92,6 +103,10 @@ def route(text: str) -> dict | None:
             args["url"] = m.group(3)
         elif action == "name":
             args["name"] = " ".join(w[:1].upper() + w[1:] for w in m.group(2).split())
+        elif action == "project_open":
+            args["name"] = m.group("name").strip()
+            if len(args["name"].split()) > 6:
+                continue
         return {"action": action, "args": args}
     return None
 
@@ -470,6 +485,55 @@ class Control:
         return {"ok": True, "message": msg}
 
     # ================================================================== dispatcher
+    # ================================================================== project notebooks
+    def _projects(self) -> Any:
+        return getattr(self.agent, "projects", None)
+
+    def find_project(self, name_or_id: str) -> dict | None:
+        pr = self._projects()
+        if pr is None or not name_or_id:
+            return None
+        return pr.get(name_or_id) or pr.find(name_or_id)
+
+    def projects_action(self, a: str, args: dict) -> dict:
+        from .projects import norm, parse_new
+        pr = self._projects()
+        if pr is None:
+            return {"ok": False, "message": "Projects aren't available in this copy of Wright."}
+        if a == "projects":
+            cards = pr.cards(30)
+            if not cards:
+                self.events.emit("notice", text="No projects yet. To start one, say for example “New project: "
+                                                "snow bot — a robot that clears the driveway”.")
+            else:
+                self.events.emit("projects", items=cards)
+            return {"ok": True, "projects": cards}
+        if a == "project_open":
+            p = self.find_project(args.get("id") or args.get("name") or "")
+            if p is None:
+                self.events.emit("notice", text="I couldn't find that project. Say “my projects” to see them all.")
+                return {"ok": False}
+            self.events.emit("notebook", project=pr.view(p))
+            return {"ok": True, "project": p["id"]}
+        name, goal = parse_new(args.get("text", "")) or ("", "")
+        if not name:
+            self.events.emit("notice", text="What should the project be called? For example: “New project: "
+                                            "snow bot — a robot that clears the driveway”.")
+            return {"ok": False}
+        old = pr.find(name)
+        if old is not None and norm(old["name"]) == norm(name):
+            self.events.emit("notebook", project=pr.view(old),
+                             message=f"There's already a project called “{old['name']}”. Here's its notebook.")
+            return {"ok": True, "project": old["id"], "existing": True}
+        p = pr.create(name, goal)
+        msg = (f"Started the “{p['name']}” project. Its notebook keeps the goal, phases, parts, decisions and why, "
+               f"what was printed and tested, and what's next. Anything you ask that names it (“{p['name']}: "
+               "…”) becomes part of it.")
+        if p["private"]:
+            msg += " It looks private, so all its jobs stay on this Mac."
+        self.events.emit("notebook", project=pr.view(p), created=True, message=msg)
+        return {"ok": True, "project": p["id"], "created": True}
+
     def handle(self, routed: dict) -> dict:
         a, args = routed["action"], routed.get("args", {})
         if a == "greet":
@@ -541,6 +605,8 @@ class Control:
         if a == "connect":
             self.events.emit("token_card", name=args["name"], url=args["url"])
             return {"ok": True}
+        if a in ("new_project", "projects", "project_open"):
+            return self.projects_action(a, args)
         if a == "name":
             name = args.get("name", "").strip()
             self.cfg.data["owner_name"] = name

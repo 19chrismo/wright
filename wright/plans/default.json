@@ -11,7 +11,8 @@
         "plan__advance",
         "plan__status",
         "memory__episodes",
-        "<read>"
+        "<read>",
+        "notebook__read"
       ],
       "next": [
         "knowledge"
@@ -29,7 +30,9 @@
         "plan__advance",
         "plan__status",
         "memory__episodes",
-        "<read>"
+        "<read>",
+        "notebook__read",
+        "notebook__update"
       ],
       "next": [
         "baseline"
@@ -66,7 +69,9 @@
         "knowledge__version",
         "knowledge__show",
         "memory__episodes",
-        "self__propose"
+        "self__propose",
+        "notebook__read",
+        "notebook__update"
       ],
       "next": [
         "verify"
@@ -79,7 +84,8 @@
         "verify__run",
         "plan__advance",
         "plan__status",
-        "<read>"
+        "<read>",
+        "notebook__read"
       ],
       "next": [
         "execute",
@@ -113,7 +119,9 @@
       "tools": [
         "task__complete",
         "plan__status",
-        "knowledge__show"
+        "knowledge__show",
+        "notebook__read",
+        "notebook__update"
       ],
       "next": [
         "done"

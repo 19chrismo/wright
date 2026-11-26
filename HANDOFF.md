@@ -15,6 +15,7 @@ and why (the owner's intent in their own words is at its top).
 | Owner-only phone access: home network, paired devices, QR pairing (`tests/test_phone_access.py`) | done |
 | Speed: fast model first, migration of saved pro-first routes, brief wait for a resting key before the local model (`tests/test_speed.py`) | done |
 | Dispatcher, time estimate, quick mode, plan card, simple home screen (`tests/test_quick_mode.py`) | done |
+| Project notebook: goal, phases, parts, decisions and why, tests, next; "work on the snow bot"; home-screen cards; private projects stay local (`tests/test_projects.py`) | done |
 | Push-to-talk button (needs HTTPS on the home network for the iPhone microphone; the iPhone keyboard's dictation works now) | to do |
 | 17. Live run on the Mac with real keys | **to do on the Mac** (steps below) |
 
@@ -55,6 +56,12 @@ are exercised for the first time on the Mac:
    minute on the Gemini key. Report the "took X (estimate Y)" line from both.
 7. **Undo.** Type "undo that" and confirm the folder's file went back. Type
    "undo" again to restore it.
+8. **Project notebook.** Type "new project: snow bot — a robot that clears the
+   driveway", then tap **Plan it with me**. The notebook should fill with
+   phases, parts and next steps. Tap **Continue** and check that the plan card
+   shows 📒 Snow bot. Report the "took X (estimate Y)" line.
+9. **Real speeds.** From the reports of steps 6 and 8, replace the defaults in
+   `dispatch.py` (`SECONDS_PER_STEP`, `DEFAULT_STEPS`) with measured numbers.
 
 ## Updates
 
