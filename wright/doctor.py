@@ -156,14 +156,14 @@ def _fix_gemini_route(cfg: Config, ids: list[str], out: Any) -> None:
             return (int(m.group(1)), int(m.group(2) or 0)) if m else (0, 0)
         return max(cands, key=lambda i: (ver(i), -len(i)), default=None)
 
+    from .config import normalize_routes
     routes = cfg.data["pool"]["routes"]
     pro, flash = best("pro"), best("flash")
     local = [m for m in routes.get("auto", []) if m.startswith("ollama:")]
-    new_auto = [m for m in (pro, flash) if m] + local
+    new_auto = [m for m in (flash, pro) if m] + local          # fast model first (see normalize_routes)
     if new_auto and new_auto != routes.get("auto"):
-        routes["auto"] = new_auto
-        routes["fast"] = [m for m in (flash,) if m] + local
-        out(f"  ✓ model route set from the live model list: {new_auto}")
+        routes.update(normalize_routes({**routes, "auto": new_auto}))
+        out(f"  ✓ model route set from the live model list: {routes['auto']}")
 
 
 OPENCORE_GUID = "4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102"   # OpenCore's NVRAM vendor GUID [INFERRED]

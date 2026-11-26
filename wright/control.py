@@ -59,6 +59,7 @@ RULES: list[tuple[str, re.Pattern]] = [
     ("undo", re.compile(r"^\s*(/undo|/rollback\s+\S+|undo( that| it| the last( change| promotion)?)?|"
                         r"roll ?back( that| the last change)?|revert( that| the last change)?)\s*\.?\s*$", re.I)),
     ("connect", re.compile(r"^\s*(/connect|connect)\s+(.{1,40}?)\s+(?:at|to|on)?\s*(https?://\S+)\s*$", re.I)),
+    ("name", re.compile(r"^\s*(/name\s*|call me\s+|my name is\s+|my name's\s+)(?!(?:when|if|after|back|later|at|on|tomorrow|tonight|in|once|before)\b)([A-Za-z][A-Za-z\-']{0,20}(?: [A-Za-z][A-Za-z\-']{0,20})?)\s*[.!]*\s*$", re.I)),
 ]
 
 
@@ -89,6 +90,8 @@ def route(text: str) -> dict | None:
         elif action == "connect":
             args["name"] = re.sub(r"[^a-z0-9]+", "-", m.group(2).lower()).strip("-")[:30]
             args["url"] = m.group(3)
+        elif action == "name":
+            args["name"] = " ".join(w[:1].upper() + w[1:] for w in m.group(2).split())
         return {"action": action, "args": args}
     return None
 
@@ -141,9 +144,11 @@ class Control:
         return None
 
     def _set_local_route(self, model: str) -> None:
+        from .config import normalize_routes
         routes = self.cfg.data["pool"]["routes"]
-        for name in ("auto", "fast"):
+        for name in ("auto", "fast", "deep", "local"):
             routes[name] = [m for m in routes.get(name, []) if not m.startswith("ollama:")] + [f"ollama:{model}"]
+        routes.update(normalize_routes(routes))
         self.cfg.save()
         if self.pool is not None:
             self.pool.routes = routes
@@ -272,6 +277,8 @@ class Control:
                 routes["auto"] = [m for m in routes.get("auto", []) if not m.startswith("ollama:")] + \
                     {"gemini": ["gemini-2.5-flash"], "openai": [], "openrouter": []}[provider] + \
                     [m for m in routes.get("auto", []) if m.startswith("ollama:")]
+            from .config import normalize_routes
+            routes.update(normalize_routes(routes))
             self.cfg.save()
             if self.pool is not None:
                 self.pool.add_lane(Lane(lane_id, provider, PROVIDER_MODELS[provider], lane.get("base_url", ""),
@@ -534,4 +541,11 @@ class Control:
         if a == "connect":
             self.events.emit("token_card", name=args["name"], url=args["url"])
             return {"ok": True}
+        if a == "name":
+            name = args.get("name", "").strip()
+            self.cfg.data["owner_name"] = name
+            self.cfg.save()
+            msg = f"Nice to meet you, {name}. I'll use that name from now on." if name else "Okay, no name."
+            self.events.emit("name_set", name=name, message=msg)
+            return {"ok": True, "message": msg}
         return {"ok": False, "message": f"unknown action {a}"}

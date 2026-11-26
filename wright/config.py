@@ -84,10 +84,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "port": 8765,
         "max_wait_seconds": 120,
         "routes": {
-            # Request model -> ordered candidates. "auto" is what the harness asks for.
-            "auto": ["gemini-2.5-pro", "gemini-2.5-flash", "ollama:qwen2.5:7b"],
+            # Request model -> ordered candidates. The dispatcher picks one route per request:
+            #   auto  — builds and research: the fast online model first, the big one second, this Mac last
+            #   fast  — quick questions: the fast online model, then this Mac
+            #   deep  — "think hard" requests: the big online model first
+            #   local — private requests: this Mac only
+            # normalize_routes() keeps them consistent with "auto" (see below).
+            "auto": ["gemini-2.5-flash", "gemini-2.5-pro", "ollama:qwen2.5:7b"],
             "fast": ["gemini-2.5-flash", "ollama:qwen2.5:7b"],
+            "deep": ["gemini-2.5-pro", "gemini-2.5-flash", "ollama:qwen2.5:7b"],
+            "local": ["ollama:qwen2.5:7b"],
         },
+        # Before handing a cloud-first request to this Mac's own (slow) model, wait this long for a
+        # resting online key to come back. 0 = use the local model immediately.
+        "prefer_cloud_wait_seconds": 75,
         # Each lane is one credential at one endpoint. Keys are referenced, never inlined.
         "lanes": [
             {"id": "ollama", "provider": "ollama", "base_url": "http://127.0.0.1:11434/v1",
@@ -111,6 +121,33 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "local_model": "auto",        # "auto": use a suitable installed model, else the default for this machine
     "auto_update": True,          # fetch, test in staging, switch only when green; daily and at launch
 }
+
+
+def _is_big(model: str) -> bool:
+    """The slower, larger online models (Gemini "pro"). Everything else online counts as fast."""
+    name = model.split("/")[-1].lower()
+    return "-pro" in name or name.endswith("pro")
+
+
+def normalize_routes(routes: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Derive every route from "auto" so they never disagree, with the fast online model first.
+
+    Older versions (and the live-model-list fixer) put the big "pro" model first. On the free tier
+    that model has a tiny per-minute allowance, so every step hit its limit, waited, fell through
+    to flash and often ended on this Mac's own model — the main reason Wright felt slow."""
+    auto = list(routes.get("auto") or [])
+    local = [m for m in auto if m.startswith("ollama:")]
+    if not local:
+        local = [m for r in routes.values() for m in r if m.startswith("ollama:")][:1]
+    cloud = [m for m in auto if not m.startswith("ollama:")]
+    fast = [m for m in cloud if not _is_big(m)]
+    big = [m for m in cloud if _is_big(m)]
+    out = dict(routes)
+    out["auto"] = fast + big + local
+    out["fast"] = (fast or big) + local
+    out["deep"] = big + fast + local
+    out["local"] = list(local)
+    return out
 
 
 def deep_merge(base: dict, over: dict) -> dict:
@@ -140,6 +177,7 @@ class Config:
             stock, mine = "ollama:qwen2.5:7b", f"ollama:{machine_default()}"
             for name, route in data["pool"]["routes"].items():
                 data["pool"]["routes"][name] = [mine if m == stock else m for m in route]
+        data["pool"]["routes"] = normalize_routes(data["pool"]["routes"])
         return cls(paths=paths, data=data)
 
     def save(self) -> None:

@@ -1,8 +1,9 @@
 # Handoff: Wright build status
 
 This file is for any Claude session that picks up this repository on another
-machine, for example the user's MacBook Air. `BRIEF.md` is the spec, and
-`README.md` explains how to use the app.
+machine, for example the user's MacBook Air. `BRIEF.md` is the spec,
+`README.md` explains how to use the app, and `ROADMAP.md` says what comes next
+and why (the owner's intent in their own words is at its top).
 
 ## Status
 
@@ -12,6 +13,8 @@ machine, for example the user's MacBook Air. `BRIEF.md` is the spec, and
 | Window as the single control surface (setup, keys, privacy, undo, connect) | done (`tests/test_window_control.py`) |
 | Brief v3 changes: install from a hash-locked uv.lock; single instance; C2 and host-OS confirms; caffeinate -s; doctor machine facts; local lane on Ollama's native streaming API with measured speed; auto-resume; activity bar and stop; changeable theme | done |
 | Owner-only phone access: home network, paired devices, QR pairing (`tests/test_phone_access.py`) | done |
+| Speed: fast model first, migration of saved pro-first routes, brief wait for a resting key before the local model (`tests/test_speed.py`) | done |
+| Dispatcher, time estimate, quick mode, plan card, simple home screen (`tests/test_quick_mode.py`) | done |
 | Push-to-talk button (needs HTTPS on the home network for the iPhone microphone; the iPhone keyboard's dictation works now) | to do |
 | 17. Live run on the Mac with real keys | **to do on the Mac** (steps below) |
 
@@ -44,8 +47,12 @@ are exercised for the first time on the Mac:
 6. **Live goal, typed in the window.** Type: "Create a folder
    ~/Wright Projects/hello containing index.html that shows the heading Hello
    from Wright, and verify the file contains that heading". It's done when the
-   report card says DONE, with green verification and a promotion with an undo
-   command. Then send the same goal again with a screenshot attached.
+   report card says “✓ Done”, with green verification and a promotion with an undo
+   command. (A "Here's the plan" card appears first with a time estimate;
+   click **Go**.) Then send the same goal again with a screenshot attached.
+   Also try a question, e.g. "how does OrcaSlicer's flow calibration work?":
+   it should answer in quick mode, without a plan card, in well under a
+   minute on the Gemini key. Report the "took X (estimate Y)" line from both.
 7. **Undo.** Type "undo that" and confirm the folder's file went back. Type
    "undo" again to restore it.
 

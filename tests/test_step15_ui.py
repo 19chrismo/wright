@@ -93,9 +93,13 @@ def test_one_window_chat_shows_integrity_information(tmp_path):
             page.goto(app.ui.url)
             page.set_input_files("#file", str(shot))                          # attach a screenshot
             page.wait_for_selector("#thumbs img")
+            page.click("#folder-link")                                         # folder field is one tap away
             page.fill("#target", str(real))
             page.fill("[data-testid=composer]", "Turn on gzip like the screenshot shows, then restart nginx.")
             page.keyboard.press("Enter")
+            card = page.wait_for_selector("[data-testid=plan-card]")            # estimate before it starts
+            assert "min" in card.inner_text() or " s" in card.inner_text()
+            page.click("[data-testid=plan-card] [data-k=go]")
             page.wait_for_selector("[data-testid=report]", timeout=60000)
             assert page.locator("[data-testid=blocked]").count() >= 1
             assert page.locator(".tag.INFERRED").first.is_visible()

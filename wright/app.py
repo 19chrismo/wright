@@ -46,7 +46,8 @@ def build_pool(config: Config, events: EventBus) -> tuple[PoolServer, Model]:
                 quota_groups=pc.get("quota_groups"), daily_reset=pc.get("daily_reset"),
                 max_wait=pc.get("max_wait_seconds", 120),
                 on_event=lambda e: events.emit(e.pop("kind"), **e), local_only=config.data.get("local_only", False),
-                usage_file=config.paths.home / "usage.json")
+                usage_file=config.paths.home / "usage.json",
+                prefer_cloud_wait=float(pc.get("prefer_cloud_wait_seconds", 0) or 0))
     server = PoolServer(pool, pc.get("host", "127.0.0.1"), free_port(pc.get("port", 8765))).start()
     return server, OpenAICompatModel(server.url, config.data["harness"]["model"], api_key=server.token)
 
@@ -88,7 +89,8 @@ class App:
         self.ui = UIServer({"agent": self.agent}, self.events, self.confirm, ui.get("host", "127.0.0.1"),
                            port if port is not None else free_port(ui.get("port", 7770)), info=self.info,
                            control=self.control, force_ready=injected, token=token,
-                           lan=bool(ui.get("lan")), devices=self.devices)
+                           lan=bool(ui.get("lan")), devices=self.devices, caps=self.caps,
+                           confirm_builds=bool(self.config.data.get("confirm_builds", True)))
         self.control.on_ready = self.ui.resume_pending
         self.control.on_restart = self.restart
         self.control.on_quit = self.quit
@@ -106,6 +108,40 @@ class App:
         self._auto_update = (not injected) and bool(self.config.data.get("auto_update", True))
         self._auto_resume = (not injected) if auto_resume is None else auto_resume
 
+    def caps(self) -> dict[str, Any]:
+        """What is set up right now, for the dispatcher: an online key, the local model, its speed."""
+        if not self.pool_server:
+            return {}
+        lanes = self.pool_server.pool.status()["lanes"]
+        cloud = [l for l in lanes if not l["local"] and l.get("has_key") and not l.get("disabled")]
+        local = [l for l in lanes if l["local"]]
+        has_local = False
+        if local:
+            try:
+                has_local = next(i for i in self.control.setup_status()["items"] if i["id"] == "local")["ok"]
+            except Exception:
+                has_local = False
+        return {"has_cloud": bool(cloud), "has_local": has_local,
+                "gen_tps": max((l.get("gen_tps") or 0 for l in local), default=0),
+                "prefill_tps": max((l.get("prefill_tps") or 0 for l in local), default=0)}
+
+    def recent(self, n: int = 6) -> list[dict[str, Any]]:
+        """The latest finished jobs, newest first, for the home screen."""
+        out = []
+        try:
+            rows = self.agent.continuity.log.all()
+        except Exception:
+            return out
+        for r in reversed(rows):
+            e = r.get("entry") or {}
+            if e.get("type") != "task" or not e.get("goal"):
+                continue
+            out.append({"goal": e["goal"][:160], "outcome": e.get("outcome"), "mode": e.get("mode", "build"),
+                        "seconds": e.get("seconds"), "ts": r.get("ts")})
+            if len(out) >= n:
+                break
+        return out
+
     def info(self) -> dict[str, Any]:
         from .persist import load_task
         items = []
@@ -115,7 +151,8 @@ class App:
                 items.append({"id": t.id, "goal": t.goal[:200], "state": t.state.get("lock", {}).get("state")})
             except Exception:
                 continue
-        return {"unfinished": items, "calibration": self.agent.continuity.calibration.overall(),
+        return {"unfinished": items, "recent": self.recent(), "name": self.config.data.get("owner_name", ""),
+                "calibration": self.agent.continuity.calibration.overall(),
                 "tools": self.agent.registry.names(),
                 "pool": self.pool_server.pool.status() if self.pool_server else None}
 

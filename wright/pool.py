@@ -216,8 +216,11 @@ class Pool:
                  daily_reset: dict[str, str] | None = None, max_wait: float = 120,
                  clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
                  timeout: float = 600, on_event: Callable[[dict], None] | None = None,
-                 local_only: bool = False, usage_file: Path | None = None):
+                 local_only: bool = False, usage_file: Path | None = None, prefer_cloud_wait: float = 0.0):
         self.lanes = lanes
+        # A cloud-first request waits up to this long for a resting online key before it is handed to
+        # this Mac's own model (much slower on an older Mac). 0 keeps the old behaviour.
+        self.prefer_cloud_wait = prefer_cloud_wait
         self.routes = routes
         self.key_lookup = key_lookup
         self.quota_groups = quota_groups or {}
@@ -334,6 +337,21 @@ class Pool:
         new_tokens = max(200, (chars - st.last_prompt_chars if chars > st.last_prompt_chars else chars) // 3)
         est = new_tokens / st.prefill_tps + 200 / st.gen_tps     # a typical turn writes ~200 tokens
         return est if est > self.local_turn_budget else None
+
+    def _cloud_back_soon(self, requested: str, prefer_until: float) -> bool:
+        """True when an online lane for this route is only resting and comes back before prefer_until."""
+        if self.prefer_cloud_wait <= 0 or self.local_only:
+            return False
+        now = self.clock()
+        cloud = [m for m in self.candidates(requested) if not m.startswith("ollama:")]
+        with self.lock:
+            for (lid, group), until in self.cooldown.items():
+                lane = next((l for l in self.lanes if l.id == lid), None)
+                if lane is None or lane.local or self.stats[lid].disabled or until <= now:
+                    continue
+                if until <= prefer_until and any(lane.serves(m) and self.group(m) == group for m in cloud):
+                    return True
+        return False
 
     def _available(self, lane: Lane, model: str, now: float) -> bool:
         st = self.stats[lane.id]
@@ -503,11 +521,17 @@ class Pool:
     def complete(self, body: dict) -> tuple[int, dict, dict[str, str]]:
         requested = body.get("model") or "auto"
         first_choice = (self.candidates(requested) or [requested])[0]
-        deadline = self.clock() + self.max_wait
+        start = self.clock()
+        deadline = start + self.max_wait
+        prefer_until = start + min(self.prefer_cloud_wait, self.max_wait)
         last_client_error: tuple[int, dict] | None = None
         while True:
             for model, lane in self.plan(requested):
                 st = self.stats[lane.id]
+                if lane.local and self._cloud_back_soon(requested, prefer_until):
+                    continue            # a resting online key is back within the wait: faster than this Mac
+                if lane.local and not first_choice.startswith("ollama:"):
+                    self.on_event({"kind": "local_fallback", "lane": lane.id, "model": model})
                 slow = self.too_slow(lane, body)
                 if slow is not None:
                     st.last_error = (f"too slow for this request on this computer (about {_mins(slow)} at "
