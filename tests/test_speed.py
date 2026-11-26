@@ -19,6 +19,13 @@ def test_routes_put_the_fast_model_first_and_stay_consistent():
     assert r["local"] == ["ollama:qwen2.5:3b"]
 
 
+def test_a_pro_only_route_gets_the_matching_flash_model():
+    # seen on the owner's Mac: auto = [gemini-2.5-pro, local]; a free key may not offer pro at all
+    r = normalize_routes({"auto": ["gemini-2.5-pro", "ollama:llama3.2:3b"]})
+    assert r["auto"] == ["gemini-2.5-flash", "gemini-2.5-pro", "ollama:llama3.2:3b"]
+    assert r["fast"][0] == "gemini-2.5-flash"
+
+
 def test_a_saved_pro_first_config_is_migrated_on_load(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
