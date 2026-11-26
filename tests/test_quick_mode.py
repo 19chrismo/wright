@@ -72,3 +72,51 @@ def test_quick_mode_answers_read_only_and_proposes_the_build(tmp_path):
 def test_plan_request_carries_an_estimate():
     d = plan_request("design a phone stand I can 3D print")
     assert d.mode == "build" and d.estimate["text"] and d.estimate["where_text"]
+
+
+import pytest  # noqa: E402
+
+from agentkit import can_launch_browser, launch  # noqa: E402
+
+
+@pytest.mark.skipif(not can_launch_browser(), reason="no browser available")
+def test_window_home_quick_answer_do_it_and_plan_card(tmp_path):
+    from playwright.sync_api import sync_playwright
+    from wright.app import App
+    cfg = agent_config(tmp_path)
+    cfg.data["pool"]["lanes"].insert(0, {"id": "gemini-1", "provider": "gemini", "models": ["gemini-*"],
+                                         "key_ref": "gemini_1"})
+    model = ScriptedModel([call("mode__build", job="Make a web page that lists my 3D prints"),
+                           say("You can do that with a small static page.")])
+    app = App(cfg, model, tools="local", port=0, power_command=[]).start(window=False)
+    started = []
+    try:
+        with sync_playwright() as p:
+            b = launch(p)
+            page = b.new_page()
+            page.goto(app.ui.url)
+            page.wait_for_selector("[data-testid=home] .tile")
+            assert page.locator(".tile").count() >= 6                              # the home screen
+            assert not page.locator("#p-state").is_visible()                       # jargon hidden…
+            page.click("#details-btn")
+            assert page.locator("#p-state").is_visible()                           # …one tap away
+            page.click("#details-btn")
+            page.fill("[data-testid=composer]", "what's a good way to list my 3D prints?")
+            page.keyboard.press("Enter")
+            page.wait_for_selector("[data-testid=report] [data-k=doit]")           # quick: no plan card
+            assert page.locator("[data-testid=plan-card]").count() == 0
+            assert "Answered" in page.inner_text("[data-testid=report]")
+            app.agent.run = lambda text, **kw: started.append((text, kw))
+            page.click("[data-testid=report] [data-k=doit]")
+            card = page.wait_for_selector("[data-testid=plan-card]")              # the job gets an estimate
+            assert "Works on a copy" in card.inner_text()
+            page.click("[data-testid=plan-card] [data-k=cancel]")
+            page.wait_for_selector("text=Nothing was started")
+            assert started == []
+            page.fill("[data-testid=composer]", "call me Robin")
+            page.keyboard.press("Enter")
+            page.wait_for_selector("text=Nice to meet you, Robin")
+            b.close()
+    finally:
+        app.stop()
+    assert app.config.data["owner_name"] == "Robin"

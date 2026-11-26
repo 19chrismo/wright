@@ -90,7 +90,8 @@ class UIServer:
     def __init__(self, agent_holder: dict, events: Any, confirmations: Confirmations,
                  host: str = "127.0.0.1", port: int = 7770, info: Callable[[], dict] | None = None,
                  control: Any = None, force_ready: bool = False, token: str | None = None,
-                 lan: bool = False, devices: Any = None):
+                 lan: bool = False, devices: Any = None, caps: Callable[[], dict] | None = None,
+                 confirm_builds: bool = True):
         if not ipaddress.ip_address(host).is_loopback:
             raise ValueError("the UI only binds to a loopback address (phone access uses lan=True)")
         from ..devices import Devices, allowed_client, allowed_host
@@ -103,6 +104,9 @@ class UIServer:
         self.control = control
         self.force_ready = force_ready
         self.pending: dict | None = None          # a goal sent before any model was set up
+        self.caps = caps or (lambda: {})          # what is set up (cloud key, local model, its speed)
+        self.confirm_builds = confirm_builds      # show the plan card ("about 4 min · online · Go?")
+        self.awaiting: dict[str, dict] = {}       # plan cards waiting for Go
         self.token = token or secrets.token_urlsafe(24)   # kept across "restart Wright" so the window stays open
         self.busy = threading.Lock()
         self.worker: threading.Thread | None = None
@@ -246,6 +250,8 @@ class UIServer:
                     return self._json(200 if ok else 404, {"ok": ok})
                 if path == "/api/resume":
                     return self._json(*outer.start_task({"resume": body.get("task_id")}))
+                if path == "/api/go":
+                    return self._json(*outer.go(body.get("id", ""), body.get("choice", "go")))
                 if outer.control is not None:
                     if path == "/api/keys":            # the key goes straight to the Keychain; never logged
                         r = outer.control.add_key(body.get("provider", "gemini"), body.get("key", ""),
@@ -273,7 +279,7 @@ class UIServer:
         if self.pending and self.control is not None and self.control.setup_status()["ready"]:
             body, self.pending = self.pending, None
             self.events.emit("notice", text="Setup is ready — starting your request now.")
-            self.start_task({**body, "force_task": True})
+            self.start_task({**body, "force_task": True, "go": True})
 
     def start_task(self, body: dict) -> tuple[int, dict]:
         text0 = (body.get("text") or "").strip()
@@ -294,6 +300,12 @@ class UIServer:
                                                 "by itself as soon as one is ready.")
                 self.control.show_setup()
                 return 202, {"pending": True}
+        if not body.get("resume") and not body.get("dispatch"):
+            plan = self.plan(body)
+            if plan is not None:
+                body = {**body, "dispatch": plan}
+                if self._needs_go(body, plan):
+                    return self.ask_go(body, plan)
         if not self.busy.acquire(blocking=False):
             return 409, {"error": "a task is already running; it will finish or stop at its budget"}
         agent = self.holder["agent"]
@@ -320,7 +332,8 @@ class UIServer:
                     if not body.get("_echoed"):
                         self.events.emit("user", text=text, images=[{"mime": i["mime"], "data": i["data"]}
                                                                     for i in images], target=target)
-                    task = agent.run(text, target=target, images=images)
+                    kw = {"dispatch": body["dispatch"]} if body.get("dispatch") else {}
+                    task = agent.run(text, target=target, images=images, **kw)
                     if self.control is not None and getattr(task, "status", "") == "blocked":
                         self.control.show_setup(probe=True)       # show exactly what needs fixing
             except Exception as e:
@@ -331,6 +344,78 @@ class UIServer:
         self.worker = threading.Thread(target=work, daemon=True)
         self.worker.start()
         return 202, {"accepted": True}
+
+    # ------------------------------------------------------------------ the plan card
+    def plan(self, body: dict) -> dict | None:
+        """The dispatcher's decision for this request, or None when the agent can't plan (tests)."""
+        agent = self.holder.get("agent")
+        if agent is None or not hasattr(agent, "plan"):
+            return None
+        text = (body.get("text") or "").strip() or "Act on what this screenshot shows."
+        try:
+            caps = self.caps() or {}
+        except Exception:
+            caps = {}
+        try:
+            d = agent.plan(text, images=len(body.get("images") or []), caps=caps)
+        except Exception as e:                                # never block a request on the estimate
+            self.events.emit("notice", text=f"Couldn't estimate this one ({type(e).__name__}); starting anyway.")
+            return None
+        forced = body.get("mode")
+        if forced in ("quick", "build") and forced != d["mode"]:
+            from ..dispatch import Dispatch, estimate
+            dd = Dispatch(**{k: v for k, v in d.items() if k != "estimate"})
+            dd.mode = forced
+            if forced == "build" and dd.route == "fast":
+                dd.route = "auto"
+            dd.reasons[0] = ("makes or changes something — I'll work on a copy first, check it, then hand "
+                             "it over with undo") if forced == "build" else dd.reasons[0]
+            dd.estimate = estimate(dd, gen_tps=float(caps.get("gen_tps") or 0),
+                                   prefill_tps=float(caps.get("prefill_tps") or 0))
+            d = dd.as_dict()
+        return d
+
+    def _needs_go(self, body: dict, plan: dict) -> bool:
+        if body.get("go") or not self.confirm_builds:
+            return False
+        return plan["mode"] == "build" or bool(plan.get("warning")) or plan["estimate"]["seconds"] > 120
+
+    def ask_go(self, body: dict, plan: dict) -> tuple[int, dict]:
+        pid = uuid.uuid4().hex[:10]
+        text = (body.get("text") or "").strip()
+        if not body.get("_echoed"):
+            self.events.emit("user", text=text, images=[{"mime": i.get("mime"), "data": i.get("data")}
+                                                        for i in body.get("images") or []],
+                             target=(body.get("target") or "").strip() or None)
+        self.awaiting = {k: v for k, v in list(self.awaiting.items())[-9:]}
+        self.awaiting[pid] = {**body, "_echoed": True}
+        has_local = bool((self.caps() or {}).get("has_local", True)) if self.caps else True
+        self.events.emit("plan_card", id=pid, goal=text[:400], plan=plan, has_local=has_local)
+        return 200, {"needs_go": pid, "plan": plan}
+
+    def go(self, pid: str, choice: str = "go") -> tuple[int, dict]:
+        body = self.awaiting.pop(pid, None)
+        if body is None:
+            return 404, {"error": "that plan is no longer waiting"}
+        self.events.emit("plan_answer", id=pid, choice=choice)
+        if choice == "cancel":
+            self.events.emit("notice", text="Cancelled. Nothing was started.")
+            return 200, {"cancelled": True}
+        plan = dict(body["dispatch"])
+        if choice in ("local", "online"):
+            from ..dispatch import Dispatch, estimate
+            dd = Dispatch(**{k: v for k, v in plan.items() if k != "estimate"})
+            if choice == "local":
+                dd.route, dd.where = "local", "this-mac"
+                dd.reasons.append("you chose to keep it on this Mac")
+            else:
+                dd.route, dd.where = ("fast" if dd.mode == "quick" and dd.size != "large" else "auto"), "online"
+                dd.reasons.append("you chose to send it online")
+            caps = self.caps() or {}
+            dd.estimate = estimate(dd, gen_tps=float(caps.get("gen_tps") or 0),
+                                   prefill_tps=float(caps.get("prefill_tps") or 0))
+            plan = dd.as_dict()
+        return self.start_task({**body, "dispatch": plan, "go": True})
 
     def start(self) -> "UIServer":
         self.thread.start()

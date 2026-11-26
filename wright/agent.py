@@ -420,6 +420,9 @@ class Agent:
         tdir = self.paths.tasks / task.id
         if dispatch:
             task.state["dispatch"] = dispatch
+            self.events.emit("dispatch", task=task.id, mode=dispatch.get("mode"), size=dispatch.get("size"),
+                             where=dispatch.get("where"), estimate=dispatch.get("estimate"),
+                             private=dispatch.get("private"))
         if dispatch and dispatch.get("mode") == "quick" and not target_spec:
             work = tdir / "work"                    # quick mode reads; nothing is promoted anywhere
             work.mkdir(parents=True, exist_ok=True)
