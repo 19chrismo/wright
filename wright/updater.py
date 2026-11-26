@@ -29,6 +29,13 @@ def _git(repo: Path, *args: str, check: bool = True) -> str:
     return p.stdout.strip()
 
 
+class _HeldBack(Exception):
+    """An update can't be tested (e.g. its new libraries couldn't be installed)."""
+
+
+DEP_FILES = ("pyproject.toml", "uv.lock")
+
+
 class Updater:
     def __init__(self, home: Path, repo: Path | None = None, branch: str = "main", python: str | None = None,
                  events: Any = None, test_timeout: float = 1800,
@@ -57,6 +64,35 @@ class Updater:
         h = self.history() + [entry]
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
         self.history_file.write_text(json.dumps(h[-50:], indent=1))
+
+    def _deps_changed(self, remote: str) -> bool:
+        """True when the improvement changes the libraries Wright needs (pyproject.toml / uv.lock)."""
+        out = _git(self.repo, "diff", "--name-only", "HEAD", remote, "--", *DEP_FILES, check=False)
+        return bool(out.strip())
+
+    def _uv(self) -> str | None:
+        uv = self.home / "bootstrap" / "bin" / "uv"           # the pinned, hash-checked uv from install.sh
+        if uv.exists():
+            return str(uv)
+        return shutil.which("uv")
+
+    def _staging_env(self, staging: Path) -> tuple[str | None, str]:
+        """Install the staging copy's locked packages into staging/.venv. Returns (python, reason)."""
+        uv = self._uv()
+        if uv is None:
+            return None, "uv isn't installed; run install.sh once"
+        venv = staging / ".venv"
+        env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(venv)}
+        try:
+            r = self.runner([uv, "sync", "--quiet", "--frozen", "--python", "3.12", "--project", str(staging),
+                             "--extra", "test", "--extra", "browser"], cwd=staging, capture_output=True,
+                            text=True, env=env, timeout=self.test_timeout)
+        except subprocess.TimeoutExpired:
+            return None, "installing took too long"
+        if r.returncode != 0:
+            return None, ((r.stderr or r.stdout or "").strip().splitlines() or ["uv sync failed"])[-1][:200]
+        py = venv / "bin" / "python"
+        return (str(py), "") if py.exists() else (None, "the new environment has no python")
 
     def check(self) -> dict:
         if not self.available():
@@ -102,16 +138,29 @@ class Updater:
         _git(self.repo, "worktree", "prune", check=False)
         _git(self.repo, "worktree", "add", "-q", "--detach", str(staging), info["remote"])
         self._emit("update", status="testing", message=f"Testing {info['behind']} new improvement(s) before switching…")
+        cmd = list(self.test_cmd)
         try:
-            p = self.runner(self.test_cmd, cwd=staging, capture_output=True, text=True, timeout=self.test_timeout)
+            # An improvement that needs a new library must be tested WITH that library. Install the
+            # locked packages into a throwaway environment inside the staging copy (never into the one
+            # Wright runs from) and test with it. Before this, such an update could never pass.
+            if self._deps_changed(info["remote"]):
+                py, why = self._staging_env(staging)
+                if py is None:
+                    raise _HeldBack(f"couldn't install the new libraries it needs ({why})")
+                if cmd and cmd[0] == self.python:
+                    cmd[0] = py
+            p = self.runner(cmd, cwd=staging, capture_output=True, text=True, timeout=self.test_timeout)
             passed = p.returncode == 0
             tail = ((p.stdout or "") + (p.stderr or ""))[-600:]
         except subprocess.TimeoutExpired:
             passed, tail = False, "tests timed out"
+        except _HeldBack as e:
+            passed, tail = False, str(e)
         finally:
             _git(self.repo, "worktree", "remove", "--force", str(staging), check=False)
         if not passed:
-            msg = (f"Held back {info['behind']} new improvement(s): their tests failed, so Wright stayed on the "
+            reason = tail if tail.startswith("couldn't install") else "their tests failed"
+            msg = (f"Held back {info['behind']} new improvement(s): {reason}, so Wright stayed on the "
                    "version that works.")
             self._record({"t": time.time(), "status": "held_back", "from": info["head"], "to": info["remote"],
                           "tests": tail})

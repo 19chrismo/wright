@@ -142,6 +142,13 @@ def normalize_routes(routes: dict[str, list[str]]) -> dict[str, list[str]]:
     cloud = [m for m in auto if not m.startswith("ollama:")]
     fast = [m for m in cloud if not _is_big(m)]
     big = [m for m in cloud if _is_big(m)]
+    if big and not fast:
+        # A route with only "pro" (seen on a free key, which may not offer pro at all) gets the
+        # matching flash model too, so there is always a fast model to fall back to before this Mac.
+        for m in big:
+            if m.startswith("gemini-") and "-pro" in m:
+                fast.append(m.split("-pro")[0] + "-flash")
+        fast = list(dict.fromkeys(fast))
     out = dict(routes)
     out["auto"] = fast + big + local
     out["fast"] = (fast or big) + local
