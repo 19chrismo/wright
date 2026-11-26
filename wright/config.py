@@ -60,12 +60,15 @@ class Paths:
     def logs(self) -> Path: return self.home / "logs"
     @property
     def projects(self) -> Path: return self.home / "projects"     # project notebooks (projects.py)
+    @property
+    def library(self) -> Path: return self.home / "library"       # tool catalogs (catalogs.py)
 
     def protected_write(self) -> list[Path]:
         """Paths no model-driven tool may write to (the audit log, secrets, hidden eval, self store,
-        project notebooks — those change only through notebook__update, which checks every field)."""
+        project notebooks — those change only through notebook__update, which checks every field —
+        and the tool-catalog copies)."""
         return [self.episodic, self.secrets, self.hidden_eval, self.self_repo, self.calibration_file,
-                self.projects]
+                self.projects, self.library]
 
     def protected_read(self) -> list[Path]:
         """Paths no model-driven tool may read (secrets and the hidden eval, including its seed copy

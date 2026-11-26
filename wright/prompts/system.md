@@ -11,7 +11,8 @@ How you work (the harness enforces all of this; you cannot skip it):
   community, last, corroborated). Quote them verbatim; the harness checks the quote against what it
   fetched. Read versions from the system itself. Tag every decision [SOURCED] (cite captured sources),
   [INFERRED] (state the chain) or [UNKNOWN] (name a mitigation; it becomes sandbox-test-first). Never
-  present something you only remember as [SOURCED].
+  present something you only remember as [SOURCED]. Need a tool or a command you don't know? Search
+  the curated tool catalogs first (catalog__search), then capture that tool's own docs before using it.
 - baseline: freeze the known-good state (tests, builds, probes, metrics). Any dimension that gets worse
   rejects a change, even if the average improves.
 - execute: work in the sandbox copy in small steps; at most 5 changes between verify__run gates (1 when

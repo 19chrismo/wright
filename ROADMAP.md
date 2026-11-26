@@ -21,6 +21,7 @@ CA$20 a month, nothing financial, nothing dangerous.
 | **Time estimate** before starting, learned from finished jobs and measured local speed | `dispatch.estimate`, episodes record mode/size/where |
 | **Quick mode:** questions and research answered read-only, without the build stages; a needed change becomes a "Do it" button | `agent._run_quick`, `prompts/quick.md` |
 | **Window:** plan card (Go / keep it on this Mac / cancel), home screen, plain-language progress, Details toggle, "call me …" | `ui/index.html`, `ui/server.py` |
+| **Tool catalogs:** The Book of Secret Knowledge (MIT) searched first when a job needs a tool or command; local copy refreshed weekly; attack/pentest parts left out | `catalogs.py`, `tests/test_catalogs.py` |
 | **Project notebook:** goal, phases, parts, decisions and why, tests, next steps, jobs; "work on the snow bot" with a Continue button; project cards on the home screen; a job that names a project reads its notebook, builds in its folder and is recorded; private projects stay on this Mac | `projects.py`, `tests/test_projects.py` |
 
 ## Next, in order
@@ -41,7 +42,9 @@ only through the self-update (which runs the tests again first).
    read-only into the sandbox), maintainer guides, then forums with a second
    source. What it learns goes into a library shared by every project (the
    semantic store already keeps sourced facts; it needs a search tool and a
-   "what do I already know about X" step). Legal sources only.
+   "what do I already know about X" step). Legal sources only. Curated tool
+   catalogs (`catalogs.py`) are the first stop for "which tool does this"; add
+   more catalogs there.
 4. **Abilities on demand.** When a job needs something Wright can't do yet,
    it finds a suitable free MCP server or tool, explains it in one line,
    installs it only after the owner taps Allow, tests it in the sandbox, and

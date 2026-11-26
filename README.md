@@ -173,6 +173,22 @@ How to use it:
 - **Private projects:** a project whose name or goal looks private (accounting,
   passwords, money and so on) keeps every job and its notebook on this Mac.
 
+## Tool catalogs: where Wright looks for tools
+
+When a job needs a tool or a command Wright doesn't know, it searches curated
+public catalogs first (`wright/catalogs.py`). The first is
+[The Book of Secret Knowledge](https://github.com/trimstray/the-book-of-secret-knowledge)
+(MIT licence). It lists about 800 command-line, desktop and web tools, manuals,
+cheat sheets and shell one-liners.
+
+- **Leads, not proof:** a catalog entry only says a tool exists and what it's
+  for. Wright then reads that tool's own documentation or code before relying
+  on it. Installing anything still needs your OK.
+- **Nothing risky:** the book's hacking and penetration-testing chapters, and
+  entries about attacking or getting round protections, are left out.
+- **Kept at home:** Wright downloads the book once into `~/.wright/library`,
+  refreshes it weekly and uses the last copy when offline.
+
 ## What happens when you send a job
 
 The procedural lock walks every task through the same states:
@@ -286,6 +302,7 @@ scripting or remote use.
 | `self/` | git repository of the prompt, role contract, config and skills that the agent may change through the self-modification gate. |
 | `hidden_eval/` | Hash-pinned held-out evaluation. Outside the model's data scope. |
 | `tasks/<id>/` | Sandbox, checkpoints, snapshots, `state.json` (for resume), and the baseline manifest. |
+| `library/<catalog>.json` | Local copy of each tool catalog, refreshed weekly. No file or shell tool can write here. |
 | `projects/<id>/notebook.json` | One notebook per project. Only Wright's `notebook__update` tool changes it; no file or shell tool can write here. |
 
 ## Formats you can audit

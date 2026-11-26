@@ -12,6 +12,7 @@ from typing import Any
 
 from . import report as report_mod
 from .calibration import calibration_hook
+from .catalogs import Catalogs, catalog_tools
 from .checks import run_checks
 from .config import PACKAGE_DIR, Config, deep_merge
 from .contract import (ContractGate, DriftMonitor, MutationBudget, RoleContract, injection_observer,
@@ -84,6 +85,7 @@ class Agent:
         self.semantic = SemanticStore(self.paths.semantic)
         self.projects = Projects(self.paths.projects,
                                  Path(self.config.data.get("projects_dir", "~/Wright Projects")).expanduser())
+        self.catalogs = Catalogs(self.paths.library)
         self.skills = SkillLibrary(self.paths.procedural / "skills")
         self.selfmod = SelfModGate(self.paths, self.skills, self._skill_exec)
         self.contract = RoleContract.from_dict(json.loads(self.selfmod.store.read("contract") or "{}"))
@@ -101,7 +103,7 @@ class Agent:
                 + memory_tools(self.continuity.log) + scope_tools(get) + self.lock.tools(get)
                 + danger_tools(get, self._run_in_sandbox, self.events) + selfmod_tools(self.selfmod)
                 + skill_tools(self.skills, self._skill_exec, get, self._skill_run_in_task)
-                + notebook_tools(self.projects, get))
+                + notebook_tools(self.projects, get) + catalog_tools(self.catalogs))
         for t in core:
             self.registry.register(t)
 
@@ -144,7 +146,7 @@ class Agent:
 
     # ================================================================== quick mode
     QUICK_CORE = ("knowledge__capture", "knowledge__version", "knowledge__decide", "knowledge__show",
-                  "memory__episodes", "mode__build", "notebook__read", "notebook__update")
+                  "memory__episodes", "mode__build", "notebook__read", "notebook__update", "catalog__search")
 
     def _quick_visible(self, task: Task) -> set[str]:
         """Read-only tools only: nothing on this Mac or the network can change in quick mode."""

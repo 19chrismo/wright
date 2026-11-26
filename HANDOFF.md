@@ -16,6 +16,7 @@ and why (the owner's intent in their own words is at its top).
 | Speed: fast model first, migration of saved pro-first routes, brief wait for a resting key before the local model (`tests/test_speed.py`) | done |
 | Dispatcher, time estimate, quick mode, plan card, simple home screen (`tests/test_quick_mode.py`) | done |
 | Project notebook: goal, phases, parts, decisions and why, tests, next; "work on the snow bot"; home-screen cards; private projects stay local (`tests/test_projects.py`) | done |
+| Tool catalogs: The Book of Secret Knowledge searched for tools and one-liners, cached in `~/.wright/library` (`tests/test_catalogs.py`) | done |
 | Push-to-talk button (needs HTTPS on the home network for the iPhone microphone; the iPhone keyboard's dictation works now) | to do |
 | 17. Live run on the Mac with real keys | **to do on the Mac** (steps below) |
 
