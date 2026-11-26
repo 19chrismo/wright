@@ -56,13 +56,19 @@ before any AI model is set up:
 | "connect home assistant at http://…/api/mcp" | Attaches a device or service; a box asks for its access token. |
 | "update yourself" · "undo the update" | Checks for improvements now · goes back to the previous version. |
 | "connect my phone" · "forget my phones" | Shows a code to scan with your iPhone or iPad camera; the device then stays signed in · turns phone access off and forgets every paired device. |
+| "call me Sam" | The home screen greets you by that name. |
 | "stop" · "keep going" · "restart Wright" · "quit Wright" | Stops the running job after its current step · picks it back up · restarts in place · closes Wright. |
 
 - **Keys:** go straight from the key box to the macOS Keychain. They never
   appear in the chat, the logs or anything sent to an AI model.
 - **A request sent before setup:** waits, and starts by itself once a model is
   ready.
-- **Anything else you type:** a goal, which Wright carries out.
+- **Anything else you type:** a question or a job. See "Before anything starts"
+  below.
+- **Details:** the window shows plain words by default. Tap **Details** (top
+  right) to see every step, tool and check. Safety items (anything Wright
+  blocked or flagged, confirmations, failed checks, rollbacks, risks) are
+  always shown.
 
 ### On your iPhone and iPad
 
@@ -82,6 +88,15 @@ typing, use the microphone key on the iPhone keyboard.
 
 - **How requests are routed:** Wright talks to one local endpoint, a pooling
   proxy on `127.0.0.1`. It sends each request to whichever key is healthy.
+- **Fast model first:** Gemini Flash answers first; the bigger, slower Gemini
+  Pro is second (or first, when you ask it to "think carefully"); this Mac's own
+  model is last. Older versions put Pro first, which on the free tier hit its
+  small per-minute limit on almost every step. Saved settings are fixed
+  automatically.
+- **Waiting beats crawling:** when an online key is only resting for a minute,
+  Wright waits for it (up to 75 seconds, `pool.prefer_cloud_wait_seconds`)
+  instead of handing the work to this Mac's model, which is far slower on an
+  older Mac. When the local model does take over, the window says so.
 - **When a key hits its limit:** that key rests and the next one takes over.
 - **When every online key is used up:** the free local model takes over. You
   never see a usage-limit error.
@@ -105,7 +120,28 @@ typing, use the microphone key on the iPhone keyboard.
 - **Undo:** "undo the update" goes back one step.
 - **Turning it off:** set `"auto_update": false` in `~/.wright/config.json`.
 
-## What happens when you send a goal
+## Before anything starts: the plan card
+
+Every request is sorted first, instantly, without asking an AI model
+(`wright/dispatch.py`):
+
+- **A question or research** ("how do I…", "find out…", "why is…") runs in
+  **quick mode**: read-only, no build stages, usually seconds to a couple of
+  minutes. If the answer needs something changed, the reply ends with a
+  **Do it** button for that job.
+- **A job** ("build…", "make…", "fix…", "clean up…") gets a **plan card**
+  first: roughly how long it'll take, where it runs (online, or on this Mac),
+  and why. Choose **Go**, **Keep it on this Mac**, or **Cancel**.
+- **Anything that looks private** (passwords, keys, money, accounting, medical,
+  camera footage, router configs) stays on this Mac. The card says so and lets
+  you send it online if you decide it's fine.
+- **The estimate learns:** every finished job records how long it really took,
+  so the next estimate for a similar job comes from your own history and the
+  measured speed of this Mac. Each report shows "took X (estimate Y)".
+
+Set `"confirm_builds": false` in `~/.wright/config.json` to skip the card.
+
+## What happens when you send a job
 
 The procedural lock walks every task through the same states:
 
