@@ -46,7 +46,8 @@ def build_pool(config: Config, events: EventBus) -> tuple[PoolServer, Model]:
                 quota_groups=pc.get("quota_groups"), daily_reset=pc.get("daily_reset"),
                 max_wait=pc.get("max_wait_seconds", 120),
                 on_event=lambda e: events.emit(e.pop("kind"), **e), local_only=config.data.get("local_only", False),
-                usage_file=config.paths.home / "usage.json")
+                usage_file=config.paths.home / "usage.json",
+                prefer_cloud_wait=float(pc.get("prefer_cloud_wait_seconds", 0) or 0))
     server = PoolServer(pool, pc.get("host", "127.0.0.1"), free_port(pc.get("port", 8765))).start()
     return server, OpenAICompatModel(server.url, config.data["harness"]["model"], api_key=server.token)
 

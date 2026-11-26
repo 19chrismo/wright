@@ -13,12 +13,12 @@ from typing import Any
 from . import report as report_mod
 from .calibration import calibration_hook
 from .checks import run_checks
-from .config import Config, deep_merge
+from .config import PACKAGE_DIR, Config, deep_merge
 from .contract import (ContractGate, DriftMonitor, MutationBudget, RoleContract, injection_observer,
                        scope_tools)
 from .danger import Confirmer, DangerGate, danger_tools
 from .events import EventBus
-from .harness import Harness, Task
+from .harness import Harness, Task, Verdict
 from .knowledge import SemanticStore, knowledge_tools
 from .llm import Model, ToolCall
 from .lock import Lock
@@ -115,10 +115,76 @@ class Agent:
             max_subtask_steps=hcfg["max_steps_per_subtask"], fix_attempts=hcfg["fix_attempts"],
             wall_clock=hcfg["wall_clock_seconds"], max_tokens=hcfg["max_tokens_per_task"],
             redact=self.continuity.redactor)
+
+        # ---- quick mode: questions and research, read-only, no 8-stage lock (see dispatch.py)
+        self.registry.register(Tool(
+            "mode__build", "Quick mode is read-only. When doing what the person wants needs changes "
+            "(build, install, fix, write files, touch a device), call this with a one-sentence job "
+            "description; they get a 'Do it' button with a time estimate.",
+            obj({"job": {"type": "string"}, "why": {"type": "string"}}, ["job"]), self._propose_build,
+            source="core:quick", read_only=True, mutating=False))
+        quick_prompt = (PACKAGE_DIR / "prompts" / "quick.md").read_text()
+        self.quick_harness = Harness(
+            model, self.registry, self.events,
+            system_prompt=self.continuity.system_prompt(quick_prompt),
+            gates=[self._quick_gate, ContractGate(self.contract, self.deny_w, self.deny_r), self.danger],
+            observers=[injection_observer, lambda t, c, tool, r: self.checkpoint(t)],
+            visible_tools=self._quick_visible, max_steps=hcfg.get("quick_max_steps", 40),
+            max_subtask_steps=hcfg.get("quick_max_steps", 40), fix_attempts=hcfg["fix_attempts"],
+            wall_clock=hcfg["wall_clock_seconds"], max_tokens=hcfg["max_tokens_per_task"],
+            redact=self.continuity.redactor)
         self.events.subscribe(self._track_lanes)
         self.events.emit("session_open", chain_ok=self.opened["chain_ok"], entries=self.opened["entries"],
                          repaired=self.opened["repaired"], calibration=self.opened["calibration"],
                          skills=self.skill_check, tools=self.registry.names())
+
+    # ================================================================== quick mode
+    QUICK_CORE = ("knowledge__capture", "knowledge__version", "knowledge__decide", "knowledge__show",
+                  "memory__episodes", "mode__build")
+
+    def _quick_visible(self, task: Task) -> set[str]:
+        """Read-only tools only: nothing on this Mac or the network can change in quick mode."""
+        out = set(self.QUICK_CORE) & set(self.registry.names())
+        for t in self.registry.all():
+            core = t.source == "core" or t.source.startswith("core:")
+            if t.read_only and not core:
+                out.add(t.name)
+        return out
+
+    def _quick_gate(self, task: Task, call: ToolCall, tool: Any) -> Verdict:
+        if call.name in self._quick_visible(task):
+            return Verdict(True)
+        return Verdict(False, f"{call.name} isn't available in quick mode (read-only). If changes are "
+                              "needed, call mode__build with the job.")
+
+    def _propose_build(self, a: dict) -> ToolResult:
+        task = self.current
+        job = (a.get("job") or "").strip()
+        if task is None or not job:
+            return ToolResult("REJECTED: describe the job in one sentence", is_error=True)
+        task.state["proposed_build"] = job[:400]
+        task.state["proposed_why"] = (a.get("why") or "")[:400]
+        return ToolResult("Noted. Finish your answer: explain what you found and what the job would do. "
+                          "The person decides whether to start it.")
+
+    def _run_quick(self, task: Task) -> Task:
+        self.current = task
+        task.state["on_decision"] = calibration_hook(self.continuity.calibration, lambda: self.current)
+        old = self._route_model(task)
+        try:
+            with keep_awake(self.power_command, self.events):
+                self.quick_harness.run(task)
+        except (KeyboardInterrupt, SystemExit):
+            self.checkpoint(task)
+            self.events.emit("interrupted", task=task.id, steps=task.steps)
+            self.current = None
+            raise
+        finally:
+            if old is not None:
+                self.model.model = old
+        self._finish(task)
+        self.current = None
+        return task
 
     # ================================================================== helpers
     def _workdir(self) -> str:
@@ -323,10 +389,44 @@ class Agent:
         return rep
 
     # ================================================================== running tasks
+    def plan(self, text: str, images: int = 0, caps: dict | None = None) -> dict:
+        """The dispatcher's decision and time estimate for a request (see dispatch.py). `caps` says
+        what is set up: has_cloud, has_local, gen_tps, prefill_tps (the app passes live values)."""
+        from .dispatch import plan_request
+        lanes = self.config.data["pool"]["lanes"]
+        caps = {"has_cloud": any(not l.get("local") for l in lanes),
+                "has_local": any(l.get("local") for l in lanes), **(caps or {})}
+        hist = []
+        try:
+            hist = [r["entry"] for r in self.continuity.log.all()[-400:] if r["entry"].get("type") == "task"]
+        except Exception:
+            pass
+        d = plan_request(text, images=images, has_cloud=caps["has_cloud"], has_local=caps["has_local"],
+                         local_only=bool(self.config.data.get("local_only")), history=hist,
+                         gen_tps=float(caps.get("gen_tps") or 0), prefill_tps=float(caps.get("prefill_tps") or 0))
+        return d.as_dict()
+
+    def _route_model(self, task: Task) -> Any:
+        """Point the model client at this task's route (fast/auto/deep/local); returns the old one."""
+        route = (task.state.get("dispatch") or {}).get("route")
+        if route and isinstance(getattr(self.model, "model", None), str):
+            old, self.model.model = self.model.model, route
+            return old
+        return None
+
     def run(self, goal: str, target: str | Path | None = None, images: list[dict] | None = None,
-            target_spec: dict | None = None) -> Task:
+            target_spec: dict | None = None, dispatch: dict | None = None) -> Task:
         task = Task(goal=goal, workdir=Path("."), images=images or [])
         tdir = self.paths.tasks / task.id
+        if dispatch:
+            task.state["dispatch"] = dispatch
+        if dispatch and dispatch.get("mode") == "quick" and not target_spec:
+            work = tdir / "work"                    # quick mode reads; nothing is promoted anywhere
+            work.mkdir(parents=True, exist_ok=True)
+            task.workdir = work
+            task.state.update(task_dir=str(tdir), sandbox_root=str(work), target_was_empty=False,
+                              mutates=False)
+            return self._run_quick(task)
         if target_spec:
             tgt: Any = CommandTarget(target_spec)
         else:
@@ -343,6 +443,11 @@ class Agent:
 
     def resume(self, task_id: str) -> Task:
         task = load_task(self.paths.tasks / task_id / "state.json")
+        if (task.state.get("dispatch") or {}).get("mode") == "quick":
+            task.state.pop("cancel", None)
+            task.status = "running"
+            self.events.emit("resumed", task=task.id, state="quick", steps=task.steps)
+            return self._run_quick(task)
         spec = task.state.get("target", {})
         if spec.get("kind") == "dir":
             tgt = DirTarget(Path(spec["real"]))
@@ -362,6 +467,7 @@ class Agent:
     def _drive(self, task: Task) -> Task:
         self.current = task
         task.state["on_decision"] = calibration_hook(self.continuity.calibration, lambda: self.current)
+        old = self._route_model(task)
         try:
             with keep_awake(self.power_command, self.events):
                 self.harness.run(task)
@@ -371,6 +477,9 @@ class Agent:
             self.events.emit("interrupted", task=task.id, steps=task.steps)
             self.current = None
             raise
+        finally:
+            if old is not None:
+                self.model.model = old
         self._finish(task)
         self.current = None
         return task
@@ -393,6 +502,13 @@ class Agent:
             sk, msg = self.skills.promote_from_task(task, name, task.goal[:200], self._skill_exec)
             task.state["skill_promotion"] = msg
         rep = report_mod.build(task, self.continuity.calibration.overall())
+        d = task.state.get("dispatch") or {}
+        rep["mode"] = d.get("mode", "build")
+        rep["where"] = d.get("where")
+        rep["estimate"] = (d.get("estimate") or {}).get("text")
+        rep["seconds"] = round(time.time() - task.started)
+        if task.state.get("proposed_build"):
+            rep["proposed_build"] = task.state["proposed_build"]
         task.state["report"] = rep
         self.events.emit("report", task=task.id, report=rep, text=report_mod.render(rep))
         self.checkpoint(task)

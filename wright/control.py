@@ -141,9 +141,11 @@ class Control:
         return None
 
     def _set_local_route(self, model: str) -> None:
+        from .config import normalize_routes
         routes = self.cfg.data["pool"]["routes"]
-        for name in ("auto", "fast"):
+        for name in ("auto", "fast", "deep", "local"):
             routes[name] = [m for m in routes.get(name, []) if not m.startswith("ollama:")] + [f"ollama:{model}"]
+        routes.update(normalize_routes(routes))
         self.cfg.save()
         if self.pool is not None:
             self.pool.routes = routes
@@ -272,6 +274,8 @@ class Control:
                 routes["auto"] = [m for m in routes.get("auto", []) if not m.startswith("ollama:")] + \
                     {"gemini": ["gemini-2.5-flash"], "openai": [], "openrouter": []}[provider] + \
                     [m for m in routes.get("auto", []) if m.startswith("ollama:")]
+            from .config import normalize_routes
+            routes.update(normalize_routes(routes))
             self.cfg.save()
             if self.pool is not None:
                 self.pool.add_lane(Lane(lane_id, provider, PROVIDER_MODELS[provider], lane.get("base_url", ""),

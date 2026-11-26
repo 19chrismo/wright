@@ -174,6 +174,11 @@ def episode_from_task(task: Any) -> dict:
         "dangers": task.state.get("dangers", []),
         "steps": task.steps,
         "seconds": round(time.time() - task.started, 1),
+        # what the dispatcher decided up front — the time estimate learns from these
+        "mode": (task.state.get("dispatch") or {}).get("mode", "build"),
+        "size": (task.state.get("dispatch") or {}).get("size", "medium"),
+        "where": (task.state.get("dispatch") or {}).get("where", "online"),
+        "estimate_seconds": ((task.state.get("dispatch") or {}).get("estimate") or {}).get("seconds"),
     }
 
 

@@ -74,7 +74,9 @@ def test_household_key_added_from_the_card_without_ever_appearing(ctl):
     lane = [l for l in c.cfg.data["pool"]["lanes"] if l["id"] == "gemini-sam"][0]
     assert lane["owner"] == "Sam" and lane["daily_cap"] == 150 and c.keys.get("gemini_sam") == "AIzaSAM-valid-key-0001"
     assert [l.id for l in pool.lanes] == ["gemini-sam"]                          # live, no restart
-    assert c.cfg.data["pool"]["routes"]["auto"][:2] == ["gemini-3-pro", "gemini-3-flash"]   # from live model list
+    routes = c.cfg.data["pool"]["routes"]
+    assert routes["auto"][:2] == ["gemini-3-flash", "gemini-3-pro"]    # from the live list, fast model first
+    assert routes["deep"][:2] == ["gemini-3-pro", "gemini-3-flash"] and routes["fast"][0] == "gemini-3-flash"
     assert "AIzaSAM" not in json.dumps(ev.history)                               # never in the transcript
     assert "AIzaSAM" not in c.cfg.paths.config_file.read_text()                  # never in config.json
     c.add_key("gemini", "AIzaALEX-valid-key-002", owner="Alex")
